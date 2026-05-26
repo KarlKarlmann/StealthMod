@@ -119,7 +119,6 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
         }
     }
 
-    // --- IMPLEMENTIERUNG ---
 
     @Override
     public VibrationSystem.Data getVibrationData() {
@@ -131,9 +130,9 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
         return this; 
     }
 
-    @Override
+	@Override
     public int getListenerRadius() {
-        return 16; 
+        return StealthConfig.COMMON.BASE_HEARING_RANGE.get();
     }
 
     @Override
@@ -193,8 +192,8 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
                 }
                 priority *= noiseMultiplier;
             }
-
-            float distanceMalus = (distance * 0.05f);
+			//max Malus 0.8f
+			float distanceMalus = distance * (0.8f / StealthConfig.COMMON.BASE_HEARING_RANGE.get().floatValue());
             priority -= distanceMalus;
 
             if (priority > 0.5f) {
@@ -206,17 +205,10 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
                 // Prio 5.0 (Schritt) -> max 0.5 Alert
                 // Prio 8.0 (Block abbauen) -> max 0.8 Alert
                 float targetAlertLevel = isEscalation ? 1.0f : Math.min(0.8f, priority * 0.1f);
-                
-                // Nur erhöhen, wenn das aktuelle Level UNTER dem erlaubten Maximum für dieses Geräusch liegt
                 if (state.getAlertLevel() < targetAlertLevel) {
-                    
-                    // Wie schnell er sich dem Maximum nähert (isEscalation ist schneller)
+
                     float alertGain = isEscalation ? 0.3f : 0.15f;
-                    
-                    // Wir addieren den Wert, cappen ihn aber streng am targetAlertLevel
                     float newAlert = Math.min(targetAlertLevel, state.getAlertLevel() + alertGain);
-                    
-                    // Nutzen wir deine bestehende Methode, um das exakte Level zu setzen
                     state.setAlertLevel(newAlert); 
                     
                     StealthNetwork.CHANNEL.send(
@@ -228,18 +220,13 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
         });
     }
 
-    /**
-     * Prüft, ob DIESER spezifische Mob jemals die Absicht hatte, dieses Ziel anzugreifen.
-     */
     @Unique
     private boolean wouldAttack(@Nullable Entity emitter) {
         if (!(emitter instanceof LivingEntity target)) return false;
         Mob me = (Mob)(Object)this;
 
-        // 1. Darf ich dich überhaupt angreifen?
         if (!me.canAttack(target) || me.isAlliedTo(target)) return false;
 
-        // 2. Unser flüchtiges UUID-Gedächtnis: Standest du jemals auf meiner Abschussliste?
         return me.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> 
             state.isKnownEnemy(target.getUUID())
         ).orElse(false);
@@ -248,8 +235,7 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
     @Unique
     private float getPriorityForEvent(GameEvent event) {
         long now = System.currentTimeMillis();
-        
-        // DEIN FIX: Sauberer Cache mit 10s Reload-Timer und performantem String-Parsing ohne langsames ".split()"
+
         if (stealth$cachedPriorities == null || (now - stealth$lastConfigCacheTime > 10000)) {
             stealth$cachedPriorities = new HashMap<>();
             List<? extends String> configList = StealthConfig.COMMON.VIBRATION_PRIORITIES.get();

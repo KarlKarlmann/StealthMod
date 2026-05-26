@@ -9,6 +9,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -49,6 +50,21 @@ public class ModCommonEvents {
     public void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof Mob mob && !event.getLevel().isClientSide()) {
             mob.goalSelector.addGoal(2, new DistractionGoal(mob));
+
+            // --- DYNAMISCHE ERHÖHUNG DER VANILLA FOLLOW-RANGE ---
+            // Damit Mobs Spieler auf hohe Distanzen (z.B. bei Sicht-/Hörweite von 64 oder 128 Blöcken)
+            // überhaupt erfassen, hebeln wir hier das künstliche Vanilla-Limit (meist 16 Blöcke) aus.
+            var followAttr = mob.getAttribute(Attributes.FOLLOW_RANGE);
+            if (followAttr != null) {
+                double maxConfigRange = Math.max(
+                    StealthConfig.COMMON.BASE_DETECTION_RANGE.get(),
+                    StealthConfig.COMMON.BASE_HEARING_RANGE.get().doubleValue()
+                );
+                // Wir erhöhen das Attribut nur, wenn die eingestellte Reichweite größer als der Standardwert ist
+                if (followAttr.getBaseValue() < maxConfigRange) {
+                    followAttr.setBaseValue(maxConfigRange);
+                }
+            }
         }
     }
 
@@ -82,7 +98,6 @@ public class ModCommonEvents {
             if (mob.getTarget() instanceof Player) {
                 mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
                     // Wenn er das Ziel verliert, machen wir die letzte Position zu einer SEHR lauten Priorität.
-                    // Das Gehirn kümmert sich dann ganz natürlich darum.
                     if (state.getLastKnownPos() != null) {
                         state.setSuspiciousLocation(state.getLastKnownPos(), 20.0f, mob.level().getGameTime());
                         state.setLastKnownPos(null);
@@ -102,8 +117,7 @@ public class ModCommonEvents {
             if (!(mob instanceof Enemy)) return;
 
             mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
-                // NEU: Erinnerung abfragen
-                // 100 Ticks = 5 Sekunden Gedächtnis
+                // NEU: Erinnerung abfragen (5 Sekunden Gedächtnis)
                 boolean isRememberedTarget = player.getUUID().equals(state.getITarget()) && state.getTimeSinceLastSeen() <= 100;
 
                 if (state.getAlertLevel() >= 0.9f || isRememberedTarget) {
@@ -173,7 +187,7 @@ public class ModCommonEvents {
         mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
             float oldAlert = state.getAlertLevel();
             LivingEntity target = mob.getTarget();
-            java.util.UUID iTarget = state.getITarget(); // NEU
+            java.util.UUID iTarget = state.getITarget();
 
             if (target != null) {
                 state.setITarget(target.getUUID()); // ITarget stets frisch halten
@@ -189,7 +203,7 @@ public class ModCommonEvents {
                     }
                 }
             } else {
-                // NEU: Timer MUSS weiterzählen, falls Target null ist, aber ITarget vorhanden (Goety Boss Szenario)
+                // Timer MUSS weiterzählen, falls Target null ist, aber ITarget vorhanden (Goety Boss Szenario)
                 if (iTarget != null) {
                     state.incrementTimeSinceLastSeen();
                     if (state.getTimeSinceLastSeen() > 100) { // Nach 5 Sekunden Timeout
@@ -204,29 +218,7 @@ public class ModCommonEvents {
 
                 if (susp != null && state.getAlertLevel() >= 0.3f) {
                     if (active == null || !susp.equals(active)) {
-/*                         if (state.getAlertLevel() > 0.8f) {
-                            int personality = Math.abs(mob.getUUID().hashCode()) % 10;
-                            
-                            if (personality >= 8) { 
-                                mob.level().gameEvent(mob, GameEvent.ENTITY_ROAR, mob.position());
-                                mob.level().playSound(null, mob.blockPosition(), SoundEvents.ENDER_DRAGON_GROWL, SoundSource.HOSTILE, 1.0f, 1.5f);
-                                state.setActiveDistraction(susp); 
-                            } 
-                            else if (personality == 7) { 
-                                Vec3 dir = mob.position().subtract(susp).normalize().scale(6.0);
-                                state.setActiveDistraction(mob.position().add(dir));
-                                
-                                if (mob.level() instanceof ServerLevel sl) {
-                                    sl.sendParticles(ParticleTypes.SPLASH, mob.getX(), mob.getEyeY() + 0.5, mob.getZ(), 15, 0.3, 0.2, 0.3, 0.1);
-                                }
-                            } 
-                            else { 
-                                state.setActiveDistraction(susp);
-                            }
-                            
-                        } else { */
-                            state.setActiveDistraction(susp);
-                        //}
+                        state.setActiveDistraction(susp);
                     }
                 }
             }

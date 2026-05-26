@@ -52,6 +52,7 @@ public class StealthConfig {
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> DYNAMIC_LIGHT_SOURCES;
 
         // --- VIBRATIONS ---
+		public final ForgeConfigSpec.IntValue BASE_HEARING_RANGE;
         public final ForgeConfigSpec.BooleanValue VIBRATION_DETECTION_ENABLED;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> VIBRATION_PRIORITIES;
 
@@ -82,6 +83,7 @@ public class StealthConfig {
                     .defineList("blacklisted_mobs", Arrays.asList(
                             "minecraft:ender_dragon",
                             "minecraft:wither",
+                            "minecraft:vex",
                             "minecraft:warden"
                     ), obj -> obj instanceof String);
 
@@ -118,6 +120,10 @@ public class StealthConfig {
                     .comment("Should mobs react to vibrations (footsteps, breaking blocks)?")
                     .define("vibration_detection_enabled", true);
 
+			BASE_HEARING_RANGE = builder
+                    .comment("Base hearing range of mobs in blocks (how far they can detect vibrations).")
+                    .defineInRange("base_hearing_range", 16, 1, 128);
+					
             VIBRATION_PRIORITIES = builder
                     .comment("Priority of game events. Format: 'game_event_id;priority' (Higher = More important).")
                     .defineList("vibration_priorities", Arrays.asList(
