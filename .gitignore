@@ -1,0 +1,10 @@
+.gradle/
+build/
+run/
+out/
+bin/
+*.class
+.idea/
+*.iml
+.vscode/
+local-git.gradle

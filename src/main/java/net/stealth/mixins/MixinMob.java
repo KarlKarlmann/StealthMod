@@ -1,0 +1,277 @@
+package net.stealth.mixins;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.GameEventTags;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gameevent.EntityPositionSource;
+import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.gameevent.PositionSource;
+import net.minecraft.world.level.gameevent.vibrations.VibrationSystem;
+import net.minecraft.world.level.gameevent.vibrations.VibrationInfo; 
+import net.minecraft.world.level.gameevent.DynamicGameEventListener;
+import net.minecraftforge.network.PacketDistributor;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.stealth.capability.StealthStateProvider;
+import net.stealth.config.StealthConfig;
+import net.stealth.network.ClientBoundSyncStealthPacket;
+import net.stealth.network.StealthNetwork;
+import net.stealth.util.StealthMath;
+import org.jetbrains.annotations.Nullable;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BiConsumer;
+
+@Mixin(Mob.class)
+public abstract class MixinMob extends LivingEntity implements VibrationSystem, VibrationSystem.User {
+
+    @Unique
+    private VibrationSystem.Data stealth$vibrationData;
+    @Unique
+    private VibrationSystem.Listener stealth$vibrationListener;
+    @Unique
+    private DynamicGameEventListener<VibrationSystem.Listener> stealth$dynamicListener;
+    
+    @Unique
+    private static Map<String, Double> stealth$cachedPriorities = null;
+    @Unique
+    private static long stealth$lastConfigCacheTime = 0;
+
+    protected MixinMob(EntityType<? extends LivingEntity> type, Level level) {
+        super(type, level);
+    }
+
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void initStealthVibration(EntityType<? extends Mob> type, Level level, CallbackInfo ci) {
+        this.stealth$vibrationData = new VibrationSystem.Data();
+        
+        this.stealth$vibrationListener = new VibrationSystem.Listener(this) {
+            @Override
+            public boolean handleGameEvent(ServerLevel level, GameEvent event, GameEvent.Context context, net.minecraft.world.phys.Vec3 pos) {
+                if (!StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) return false;
+
+                VibrationSystem.Data data = MixinMob.this.stealth$vibrationData;
+                VibrationSystem.User user = MixinMob.this;
+
+                if (!user.isValidVibration(event, context)) {
+                    return false;
+                } else {
+                    float distance = (float)pos.distanceTo(MixinMob.this.position());
+                    int travelTime = user.calculateTravelTimeInTicks(distance);
+                    
+                    data.setCurrentVibration(new VibrationInfo(
+                        event, distance, pos, context.sourceEntity()
+                    ));
+                    
+                    data.setTravelTimeInTicks(travelTime);
+                    return true;
+                }
+            }
+        };
+
+        this.stealth$dynamicListener = new DynamicGameEventListener<>(this.stealth$vibrationListener);
+    }
+
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void tickStealthVibration(CallbackInfo ci) {
+        Level level = this.level();
+        if (level instanceof ServerLevel serverLevel && StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) {
+            VibrationSystem.Ticker.tick(serverLevel, this.stealth$vibrationData, this.getVibrationUser());
+        }
+    }
+
+    @Override
+    public void updateDynamicGameEventListener(BiConsumer<DynamicGameEventListener<?>, ServerLevel> registrar) {
+        if (this.level() instanceof ServerLevel serverLevel) {
+            registrar.accept(this.stealth$dynamicListener, serverLevel);
+        }
+    }
+
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    private void saveStealthData(CompoundTag tag, CallbackInfo ci) {
+        VibrationSystem.Data.CODEC.encodeStart(NbtOps.INSTANCE, this.stealth$vibrationData)
+                .resultOrPartial(err -> {})
+                .ifPresent(data -> tag.put("stealth_vibration_data", data));
+    }
+
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    private void loadStealthData(CompoundTag tag, CallbackInfo ci) {
+        if (tag.contains("stealth_vibration_data")) {
+            VibrationSystem.Data.CODEC.parse(NbtOps.INSTANCE, tag.get("stealth_vibration_data"))
+                    .resultOrPartial(err -> {})
+                    .ifPresent(data -> this.stealth$vibrationData = data);
+        }
+    }
+
+    // --- IMPLEMENTIERUNG ---
+
+    @Override
+    public VibrationSystem.Data getVibrationData() {
+        return this.stealth$vibrationData;
+    }
+
+    @Override
+    public VibrationSystem.User getVibrationUser() {
+        return this; 
+    }
+
+    @Override
+    public int getListenerRadius() {
+        return 16; 
+    }
+
+    @Override
+    public PositionSource getPositionSource() {
+        return new EntityPositionSource(this, this.getEyeHeight());
+    }
+
+    @Override
+    public TagKey<GameEvent> getListenableEvents() {
+        return GameEventTags.VIBRATIONS;
+    }
+
+    @Override
+    public boolean canTriggerAvoidVibration() {
+        return true;
+    }
+
+    @Override
+    public boolean isValidVibration(GameEvent event, GameEvent.Context context) {
+        Entity source = context.sourceEntity();
+        if (source != null && source == (Mob)(Object)this) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean canReceiveVibration(ServerLevel level, BlockPos pos, GameEvent event, GameEvent.Context context) {
+        if (!StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) return false;
+        if (this.isDeadOrDying() || !this.level().getWorldBorder().isWithinBounds(pos)) return false;
+        return true;
+    }
+
+    @Override
+    public void onReceiveVibration(ServerLevel level, BlockPos pos, GameEvent event, @Nullable Entity emitter, @Nullable Entity projectileOwner, float distance) {
+        ((Mob)(Object)this).getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
+            
+            float priority = getPriorityForEvent(event);
+            boolean isEscalation = event == GameEvent.ENTITY_DAMAGE || event == GameEvent.ENTITY_DIE || event == GameEvent.ENTITY_ROAR || event == GameEvent.EXPLODE;
+            
+            // Den WAHREN Verursacher ausfindig machen
+            Entity trueSource = projectileOwner != null ? projectileOwner : emitter;
+            boolean isEnemy = wouldAttack(trueSource);
+
+            // Filter
+            if (!isEnemy && !isEscalation) {
+                priority *= 0.1f; 
+            }
+
+            if (trueSource instanceof Player player) {
+                float noiseMultiplier = (float) StealthMath.getArmorNoiseMultiplier(player);
+                boolean isMovement = event == GameEvent.STEP || event == GameEvent.SWIM || event == GameEvent.ELYTRA_GLIDE || event == GameEvent.HIT_GROUND;
+                
+                if (player.isCrouching()) {
+                    if (isMovement) noiseMultiplier *= 0.1f;
+                    else noiseMultiplier *= 0.8f; 
+                }
+                priority *= noiseMultiplier;
+            }
+
+            float distanceMalus = (distance * 0.05f);
+            priority -= distanceMalus;
+
+            if (priority > 0.5f) {
+                state.setSuspiciousLocation(pos.getCenter(), priority, level.getGameTime());
+                
+                // --- NEUES KONZEPT: Maximales Alert-Level basierend auf Priorität ---
+                
+                // Ein Faktor von 0.1 bedeutet z.B.:
+                // Prio 5.0 (Schritt) -> max 0.5 Alert
+                // Prio 8.0 (Block abbauen) -> max 0.8 Alert
+                float targetAlertLevel = isEscalation ? 1.0f : Math.min(0.8f, priority * 0.1f);
+                
+                // Nur erhöhen, wenn das aktuelle Level UNTER dem erlaubten Maximum für dieses Geräusch liegt
+                if (state.getAlertLevel() < targetAlertLevel) {
+                    
+                    // Wie schnell er sich dem Maximum nähert (isEscalation ist schneller)
+                    float alertGain = isEscalation ? 0.3f : 0.15f;
+                    
+                    // Wir addieren den Wert, cappen ihn aber streng am targetAlertLevel
+                    float newAlert = Math.min(targetAlertLevel, state.getAlertLevel() + alertGain);
+                    
+                    // Nutzen wir deine bestehende Methode, um das exakte Level zu setzen
+                    state.setAlertLevel(newAlert); 
+                    
+                    StealthNetwork.CHANNEL.send(
+                        PacketDistributor.TRACKING_ENTITY.with(() -> (Mob)(Object)this),
+                        new ClientBoundSyncStealthPacket(this.getId(), state.getAlertLevel())
+                    );
+                }
+            }
+        });
+    }
+
+    /**
+     * Prüft, ob DIESER spezifische Mob jemals die Absicht hatte, dieses Ziel anzugreifen.
+     */
+    @Unique
+    private boolean wouldAttack(@Nullable Entity emitter) {
+        if (!(emitter instanceof LivingEntity target)) return false;
+        Mob me = (Mob)(Object)this;
+
+        // 1. Darf ich dich überhaupt angreifen?
+        if (!me.canAttack(target) || me.isAlliedTo(target)) return false;
+
+        // 2. Unser flüchtiges UUID-Gedächtnis: Standest du jemals auf meiner Abschussliste?
+        return me.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> 
+            state.isKnownEnemy(target.getUUID())
+        ).orElse(false);
+    }
+
+    @Unique
+    private float getPriorityForEvent(GameEvent event) {
+        long now = System.currentTimeMillis();
+        
+        // DEIN FIX: Sauberer Cache mit 10s Reload-Timer und performantem String-Parsing ohne langsames ".split()"
+        if (stealth$cachedPriorities == null || (now - stealth$lastConfigCacheTime > 10000)) {
+            stealth$cachedPriorities = new HashMap<>();
+            List<? extends String> configList = StealthConfig.COMMON.VIBRATION_PRIORITIES.get();
+            for (String s : configList) {
+                int separatorIdx = s.indexOf(';');
+                if (separatorIdx != -1) {
+                    try {
+                        String eventName = s.substring(0, separatorIdx).trim();
+                        double prio = Double.parseDouble(s.substring(separatorIdx + 1).trim());
+                        stealth$cachedPriorities.put(eventName, prio);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            stealth$lastConfigCacheTime = now;
+        }
+
+        ResourceLocation key = BuiltInRegistries.GAME_EVENT.getKey(event);
+        
+        if (key != null && stealth$cachedPriorities.containsKey(key.toString())) {
+            return stealth$cachedPriorities.get(key.toString()).floatValue();
+        }
+        
+        return 5.0f; 
+    }
+}

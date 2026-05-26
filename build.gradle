@@ -1,0 +1,85 @@
+plugins {
+    id 'eclipse'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+// Version dynamisch aus gradle.properties laden (Fallback auf 1.0.0, falls nicht gefunden)
+version = project.hasProperty('mod_version') ? project.getProperty('mod_version') : '1.0.0'
+group = 'net.stealth'
+archivesBaseName = 'stealth'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    copyIdeResources = true
+
+    runs {
+        client {
+            // MCreator Reste sind hier restlos entfernt!
+        }
+
+        server {
+        }
+
+        configureEach {
+            workingDirectory project.file('run')
+
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                stealth {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.3.0'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+mixin {
+    add sourceSets.main, 'mixins.stealth.refmap.json'
+
+    config 'mixins.stealth.json'
+
+    debug.verbose = true
+    debug.export = true
+    dumpTargetOnFailure = true
+
+    quiet
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+// --- Anpassung 1: Dateinamen der JAR für Stealth festlegen ---
+tasks.named('jar', Jar).configure {
+    archiveFileName = "stealth_1.20.1_forge_${project.version}.jar"
+}
+
+// --- Anpassung 2: Version dynamisch in die mods.toml schreiben ---
+tasks.named('processResources', ProcessResources).configure {
+    def replaceProperties = [
+            version: project.version
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+// --- Anpassung 3: Lokales Git-Skript laden (Wird auf GitHub ignoriert) ---
+if (file('local-git.gradle').exists()) {
+    apply from: 'local-git.gradle'
+}

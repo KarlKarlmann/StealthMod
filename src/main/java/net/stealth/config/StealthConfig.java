@@ -1,0 +1,153 @@
+package net.stealth.config;
+
+import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.fml.common.Mod;
+import org.apache.commons.lang3.tuple.Pair;
+
+import java.util.Arrays;
+import java.util.List;
+
+@Mod.EventBusSubscriber
+public class StealthConfig {
+    // FIX: Renamed from COMMON_SPEC to SPEC so StealthMod.java can find it
+    public static final ForgeConfigSpec SPEC; 
+    public static final CommonConfig COMMON;
+    
+    public static final ForgeConfigSpec CLIENT_SPEC;
+    public static final ClientConfig CLIENT;
+
+    static {
+        final Pair<CommonConfig, ForgeConfigSpec> commonSpecPair = new ForgeConfigSpec.Builder().configure(CommonConfig::new);
+        SPEC = commonSpecPair.getRight(); // Assignment to SPEC
+        COMMON = commonSpecPair.getLeft();
+
+        final Pair<ClientConfig, ForgeConfigSpec> clientSpecPair = new ForgeConfigSpec.Builder().configure(ClientConfig::new);
+        CLIENT_SPEC = clientSpecPair.getRight();
+        CLIENT = clientSpecPair.getLeft();
+    }
+
+    public static class ClientConfig {
+        public final ForgeConfigSpec.BooleanValue HUD_ENABLED;
+
+        ClientConfig(ForgeConfigSpec.Builder builder) {
+            builder.push("client");
+            HUD_ENABLED = builder
+                    .comment("Toggles the Stealth HUD (eye/dagger) on or off.")
+                    .define("hud_enabled", true);
+            builder.pop();
+        }
+    }
+
+    public static class CommonConfig {
+        // --- GENERAL ---
+        public final ForgeConfigSpec.DoubleValue BASE_DETECTION_RANGE;
+        public final ForgeConfigSpec.DoubleValue FOV_DEGREES;
+        public final ForgeConfigSpec.DoubleValue BACKSTAB_MULTIPLIER;
+        public final ForgeConfigSpec.BooleanValue BACKSTAB_ENABLED;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> BLACKLISTED_MOBS;
+        
+        // --- LIGHT ---
+        public final ForgeConfigSpec.DoubleValue GLOBAL_LIGHT;
+        public final ForgeConfigSpec.BooleanValue DYNAMIC_LIGHTS_ENABLED;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> DYNAMIC_LIGHT_SOURCES;
+
+        // --- VIBRATIONS ---
+        public final ForgeConfigSpec.BooleanValue VIBRATION_DETECTION_ENABLED;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> VIBRATION_PRIORITIES;
+
+        // --- ARMOR & NOISE ---
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> ARMOR_NOISE_MULTIPLIERS;
+
+        CommonConfig(ForgeConfigSpec.Builder builder) {
+            builder.push("general");
+            
+            BASE_DETECTION_RANGE = builder
+                    .comment("Base detection range of mobs in blocks.")
+                    .defineInRange("base_detection_range", 16.0, 1.0, 128.0);
+            
+            FOV_DEGREES = builder
+                    .comment("Field of view of mobs in degrees.")
+                    .defineInRange("fov_degrees", 80.0, 10.0, 360.0);
+            
+            BACKSTAB_ENABLED = builder
+                    .comment("Toggles the backstab damage bonus on or off.")
+                    .define("backstab_enabled", true);
+
+            BACKSTAB_MULTIPLIER = builder
+                    .comment("Damage multiplier for attacks from behind.")
+                    .defineInRange("backstab_multiplier", 3.0, 1.0, 100.0);
+
+            BLACKLISTED_MOBS = builder
+                    .comment("List of mobs that completely ignore the stealth system. Format: 'modid:entity'")
+                    .defineList("blacklisted_mobs", Arrays.asList(
+                            "minecraft:ender_dragon",
+                            "minecraft:wither",
+                            "minecraft:warden"
+                    ), obj -> obj instanceof String);
+
+            builder.pop();
+
+            builder.push("light");
+            
+            GLOBAL_LIGHT = builder
+                    .comment("The overall light level. Makes it harder to hide.")
+                    .defineInRange("overall_light_multiplier", 0.0, 0.0, 15.0);
+
+            DYNAMIC_LIGHTS_ENABLED = builder
+                    .comment("Should the light from held items (torches, etc.) increase visibility?")
+                    .define("dynamic_lights_enabled", true);
+
+            DYNAMIC_LIGHT_SOURCES = builder
+                    .comment("List of items and their light level in the format 'modid:item;level'.")
+                    .defineList("dynamic_light_sources", Arrays.asList(
+                            "minecraft:torch;14",
+                            "minecraft:soul_torch;10",
+                            "minecraft:lantern;15",
+                            "minecraft:soul_lantern;10",
+                            "minecraft:glow_berries;14",
+                            "minecraft:lava_bucket;15",
+                            "minecraft:sea_lantern;15",
+                            "minecraft:glowstone;15"
+                    ), obj -> obj instanceof String);
+
+            builder.pop();
+
+            builder.push("vibrations");
+
+            VIBRATION_DETECTION_ENABLED = builder
+                    .comment("Should mobs react to vibrations (footsteps, breaking blocks)?")
+                    .define("vibration_detection_enabled", true);
+
+            VIBRATION_PRIORITIES = builder
+                    .comment("Priority of game events. Format: 'game_event_id;priority' (Higher = More important).")
+                    .defineList("vibration_priorities", Arrays.asList(
+                            "minecraft:projectile_land;10.0",
+                            "minecraft:explode;10.0",
+                            "minecraft:block_destroy;8.0",
+                            "minecraft:block_place;6.0",
+                            "minecraft:step;5.0",
+                            "minecraft:hit_ground;5.0",
+                            "minecraft:splash;6.0",
+                            "minecraft:swim;4.0",
+                            "minecraft:flap;3.0"
+                    ), obj -> obj instanceof String);
+
+            builder.pop();
+
+            builder.push("sound");
+
+            ARMOR_NOISE_MULTIPLIERS = builder
+                    .comment("Noise multiplier for armor materials. Format: 'material_name;multiplier'.")
+                    .defineList("armor_noise_multipliers", Arrays.asList(
+                            "leather;0.05",
+                            "chainmail;0.15",
+                            "golden;0.20",
+                            "iron;0.30",
+                            "diamond;0.20",
+                            "netherite;0.25"
+                    ), obj -> obj instanceof String);
+
+            builder.pop();
+        }
+    }
+}

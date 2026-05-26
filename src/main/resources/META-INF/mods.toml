@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="CC BY-NC 4.0"
+
+[[mods]]
+modId="stealth"
+version="${version}"
+displayName="Stealth!"
+displayURL="https://www.n3g.de"
+credits="NOT created using the mod maker MCreator — but kindly mentioned because the initial setup was generated with it."
+authors="KarlKarlmann"
+
+
+[[dependencies.stealth]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1]"
+    ordering="AFTER"
+    side="BOTH"

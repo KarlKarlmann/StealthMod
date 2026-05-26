@@ -1,0 +1,12 @@
+{
+  "detected": {
+    "category": "player",
+    "subtitle": "subtitles.stealth.detected",
+    "sounds": [
+      {
+        "name": "stealth:detected",
+        "stream": false
+      }
+    ]
+  }
+}
