@@ -24,19 +24,16 @@ public class DistractionGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        // Wir brechen nur ab, wenn wir wirklich im Kampf sind
         if (mob.getTarget() != null) return false;
 
-        // Wir prüfen nur die "ActiveDistraction" Variable (Befehl)
         return mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> {
             Vec3 pos = state.getActiveDistraction();
             if (pos == null) return false;
-            
-            // Sind wir schon da?
-            if (mob.position().distanceToSqr(pos) < 4.0) {
-                state.clearActiveDistraction();
-                return false;
-            }
+
+			if (mob.position().distanceToSqr(pos) < 4.0) {
+				state.clearActiveDistraction();
+				return false;
+			}
             
             this.targetPos = pos;
             return true;

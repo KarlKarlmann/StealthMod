@@ -34,20 +34,20 @@ public class StealthCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("stealth")
-            .requires(source -> source.hasPermission(2)) // Benötigt OP-Rechte (Level 2)
+            .requires(source -> source.hasPermission(2))
             .then(Commands.literal("info")
                 .executes(StealthCommands::checkInfo))
             .then(Commands.literal("blacklist")
                 .then(Commands.literal("add")
-                    // Auf anvisiertes Ziel anwenden
+
                     .executes(ctx -> modifyBlacklist(ctx, null, true))
-                    // Auf explizit eingegebene ID anwenden (z.B. minecraft:zombie)
+
                     .then(Commands.argument("mob", ResourceLocationArgument.id())
                         .executes(ctx -> modifyBlacklist(ctx, ResourceLocationArgument.getId(ctx, "mob").toString(), true))))
                 .then(Commands.literal("remove")
-                    // Auf anvisiertes Ziel anwenden
+
                     .executes(ctx -> modifyBlacklist(ctx, null, false))
-                    // Auf explizit eingegebene ID anwenden
+
                     .then(Commands.argument("mob", ResourceLocationArgument.id())
                         .executes(ctx -> modifyBlacklist(ctx, ResourceLocationArgument.getId(ctx, "mob").toString(), false))))
             )
@@ -55,9 +55,7 @@ public class StealthCommands {
     }
 
     private static int modifyBlacklist(CommandContext<CommandSourceStack> context, String mobId, boolean isAdding) {
-        final String finalMobId; // Strikt "final" deklarieren, damit Lambdas glücklich sind!
-
-        // 1. Wenn keine ID eingegeben wurde, nimm das anvisierte Ziel
+        final String finalMobId;
         if (mobId == null) {
             LivingEntity target = getTargetedEntity(context.getSource().getEntity());
             if (target == null) {

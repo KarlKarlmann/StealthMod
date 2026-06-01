@@ -1,1 +1,15 @@
-{}
+{
+  "attribute.name.stealth.camouflage": "Camouflage",
+  "attribute.name.stealth.muffling": "Muffling",
+  
+  "subtitles.stealth.detected": "Stealth alert triggered",
+  
+  "commands.stealth.info.success": "§7[Stealth] Target: §f%s | Status: %s%s",
+  "commands.stealth.info.no_target": "§c[Stealth] No target in sight (max 20 blocks).",
+  "commands.stealth.blacklist.no_target_id": "§c[Stealth] No target in sight and no Mob ID specified.",
+  "commands.stealth.blacklist.id_error": "§c[Stealth] Could not determine Mob ID.",
+  "commands.stealth.blacklist.add.already": "§e[Stealth] %s is already on the blacklist.",
+  "commands.stealth.blacklist.add.success": "§a[Stealth] %s was ADDED to the blacklist.",
+  "commands.stealth.blacklist.remove.not_found": "§e[Stealth] %s is not on the blacklist.",
+  "commands.stealth.blacklist.remove.success": "§a[Stealth] %s was REMOVED from the blacklist."
+}

@@ -217,9 +217,10 @@ public class ModCommonEvents {
                 Vec3 active = state.getActiveDistraction();
 
                 if (susp != null && state.getAlertLevel() >= 0.3f) {
-                    if (active == null || !susp.equals(active)) {
-                        state.setActiveDistraction(susp);
-                    }
+					if (active == null || !susp.equals(active)) {
+						state.setActiveDistraction(susp);
+						state.clearSuspiciousLocation(); // fix
+					}
                 }
             }
 
