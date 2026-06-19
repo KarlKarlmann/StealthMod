@@ -12,13 +12,20 @@ public class StealthAttributes {
     public static final DeferredRegister<Attribute> ATTRIBUTES = DeferredRegister.create(ForgeRegistries.ATTRIBUTES, StealthMod.MODID);
 
     // Tarnung: 0.0 = Keine Tarnung (Normal), 1.0 = Unsichtbar.
-    // Kann auch negativ sein (z.B. leuchtende Rüstung = -0.5).
     public static final RegistryObject<Attribute> CAMOUFLAGE = ATTRIBUTES.register("camouflage",
             () -> new RangedAttribute("attribute.name.stealth.camouflage", 0.0D, -10.0D, 1.0D).setSyncable(true));
 
     // Dämpfung: 0.0 = Normaler Lärm, 1.0 = Lautlos.
     public static final RegistryObject<Attribute> MUFFLING = ATTRIBUTES.register("muffling",
             () -> new RangedAttribute("attribute.name.stealth.muffling", 0.0D, -10.0D, 1.0D).setSyncable(true));
+
+    // Backstab Flat Bonus: Direkter Bonus-Schaden VOR dem Multiplikator. Standard = 0.0
+    public static final RegistryObject<Attribute> BACKSTAB_DAMAGE = ATTRIBUTES.register("backstab_damage",
+            () -> new RangedAttribute("attribute.name.stealth.backstab_damage", 0.0D, 0.0D, 1024.0D).setSyncable(true));
+
+    // Backstab Multiplier Bonus: Skaliert den Config-Multiplikator. Standard = 1.0 (100%)
+    public static final RegistryObject<Attribute> BACKSTAB_MULTIPLIER = ATTRIBUTES.register("backstab_multiplier",
+            () -> new RangedAttribute("attribute.name.stealth.backstab_multiplier", 1.0D, 0.0D, 100.0D).setSyncable(true));
 
     public static void register(IEventBus eventBus) {
         ATTRIBUTES.register(eventBus);

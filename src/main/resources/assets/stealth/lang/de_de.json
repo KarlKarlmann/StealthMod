@@ -1,0 +1,16 @@
+{
+  "attribute.name.stealth.camouflage": "Tarnung",
+  "attribute.name.stealth.muffling": "Dämpfung",
+  "attribute.name.stealth.backstab_damage": "Meuchelschaden",
+  "attribute.name.stealth.backstab_multiplier": "Meuchel-Multiplikator",
+  "subtitles.stealth.detected": "Stealth-Alarm ausgelöst",
+  "subtitles.stealth.backstab": "Meuchelangriff",
+  "commands.stealth.info.success": "§7[Stealth] Ziel: §f%s | Status: %s%s",
+  "commands.stealth.info.no_target": "§c[Stealth] Kein Ziel im Visier (max 20 Blöcke).",
+  "commands.stealth.blacklist.no_target_id": "§c[Stealth] Kein Ziel im Visier und keine Mob-ID angegeben.",
+  "commands.stealth.blacklist.id_error": "§c[Stealth] Konnte Mob-ID nicht ermitteln.",
+  "commands.stealth.blacklist.add.already": "§e[Stealth] %s steht bereits auf der Blacklist.",
+  "commands.stealth.blacklist.add.success": "§a[Stealth] %s wurde zur Blacklist HINZUGEFÜGT.",
+  "commands.stealth.blacklist.remove.not_found": "§e[Stealth] %s ist nicht auf der Blacklist.",
+  "commands.stealth.blacklist.remove.success": "§a[Stealth] %s wurde von der Blacklist ENTFERNT."
+}

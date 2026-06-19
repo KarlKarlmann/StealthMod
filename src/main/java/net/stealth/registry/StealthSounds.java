@@ -16,6 +16,10 @@ public class StealthSounds {
     public static final RegistryObject<SoundEvent> DETECTED = SOUNDS.register("detected",
             () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(StealthMod.MODID, "detected")));
 
+    public static final RegistryObject<SoundEvent> BACKSTAB = SOUNDS.register("backstab",
+            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(StealthMod.MODID, "backstab")));
+
+
     public static void register(IEventBus eventBus) {
         SOUNDS.register(eventBus);
     }

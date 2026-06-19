@@ -18,5 +18,11 @@ public class ModEventBusEvents {
         if (!event.has(EntityType.PLAYER, StealthAttributes.MUFFLING.get())) {
             event.add(EntityType.PLAYER, StealthAttributes.MUFFLING.get());
         }
+        if (!event.has(EntityType.PLAYER, StealthAttributes.BACKSTAB_DAMAGE.get())) {
+            event.add(EntityType.PLAYER, StealthAttributes.BACKSTAB_DAMAGE.get());
+        }
+        if (!event.has(EntityType.PLAYER, StealthAttributes.BACKSTAB_MULTIPLIER.get())) {
+            event.add(EntityType.PLAYER, StealthAttributes.BACKSTAB_MULTIPLIER.get());
+        }
     }
 }

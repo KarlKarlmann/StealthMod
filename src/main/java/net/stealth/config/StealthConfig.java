@@ -44,8 +44,10 @@ public class StealthConfig {
         public final ForgeConfigSpec.DoubleValue FOV_DEGREES;
         public final ForgeConfigSpec.DoubleValue BACKSTAB_MULTIPLIER;
         public final ForgeConfigSpec.BooleanValue BACKSTAB_ENABLED;
+        public final ForgeConfigSpec.ConfigValue<String> BACKSTAB_SOUND;
+        public final ForgeConfigSpec.ConfigValue<String> BACKSTAB_PARTICLE;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> BLACKLISTED_MOBS;
-        
+        public final ForgeConfigSpec.BooleanValue BOOST_IGNORED_MOBS_RANGE;        
         // --- LIGHT ---
         public final ForgeConfigSpec.DoubleValue GLOBAL_LIGHT;
         public final ForgeConfigSpec.BooleanValue DYNAMIC_LIGHTS_ENABLED;
@@ -78,6 +80,14 @@ public class StealthConfig {
                     .comment("Damage multiplier for attacks from behind.")
                     .defineInRange("backstab_multiplier", 3.0, 1.0, 100.0);
 
+            BACKSTAB_SOUND = builder
+                    .comment("Sound played on a successful backstab. Format: 'modid:sound_event' (use 'none' to disable)")
+                    .define("backstab_sound", "stealth:backstab");
+
+            BACKSTAB_PARTICLE = builder
+                    .comment("Particle spawned on a successful backstab. Format: 'modid:particle_type' (use 'none' to disable)")
+                    .define("backstab_particle", "minecraft:crit");
+					
             BLACKLISTED_MOBS = builder
                     .comment("List of mobs that completely ignore the stealth system. Format: 'modid:entity'")
                     .defineList("blacklisted_mobs", Arrays.asList(
@@ -87,6 +97,10 @@ public class StealthConfig {
                             "minecraft:warden"
                     ), obj -> obj instanceof String);
 
+            BOOST_IGNORED_MOBS_RANGE = builder
+                    .comment("Should blacklisted/tagged mobs still get their follow range boosted to match the stealth config?")
+                    .define("boost_ignored_mobs_range", false);
+					
             builder.pop();
 
             builder.push("light");

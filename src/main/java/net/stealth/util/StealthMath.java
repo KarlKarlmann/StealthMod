@@ -1,8 +1,11 @@
 package net.stealth.util;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
@@ -23,17 +26,25 @@ import java.util.Map;
 
 public class StealthMath {
 
-    // Cache für Config-Werte um Performance zu sparen
     private static Map<String, Integer> cachedLightSources = null;
     private static Map<String, Double> cachedArmorNoise = null;
     private static long lastConfigCacheTime = 0;
+
+    // --- NEU: Entity Tag für Mobs, die dauerhaft Nachtsicht haben (z.B. Warden, Spinnen) ---
+    public static final TagKey<EntityType<?>> IGNORES_LIGHTLEVEL = TagKey.create(Registries.ENTITY_TYPE, new ResourceLocation("stealth", "ignores_lightlevel"));
 
     public static double getVisibilityScore(LivingEntity player) {
         return calculateBaseVisibility(player, false);
     }
 
     public static double getVisibilityScore(LivingEntity player, LivingEntity observer) {
-        boolean observerHasNightVision = observer != null && observer.hasEffect(MobEffects.NIGHT_VISION);
+        if (observer != null && observer.hasEffect(MobEffects.BLINDNESS)) {
+            if (player.distanceTo(observer) > 1.5) {
+                return 0.0;
+            }
+        }
+
+        boolean observerHasNightVision = observer != null && (observer.hasEffect(MobEffects.NIGHT_VISION) || observer.getType().is(IGNORES_LIGHTLEVEL));
         double baseScore = calculateBaseVisibility(player, observerHasNightVision);
 
         if (observer == null) return baseScore;
@@ -44,7 +55,6 @@ public class StealthMath {
         
         double angleFactor = (dot >= 0.9) ? 1.0 : Math.max(0.5, dot);
 
-        // --- NEU: ALERT-LEVEL & NAHBEREICH ---
         float alertLevel = 0.0f;
         if (observer instanceof net.minecraft.world.entity.Mob mob) {
             alertLevel = mob.getCapability(net.stealth.capability.StealthStateProvider.STEALTH_CAPABILITY)
@@ -52,21 +62,12 @@ public class StealthMath {
                             .orElse(0.0f);
         }
 
-        // 1. Genereller Paranoia-Boost: Ein alarmierter Mob sieht generell etwas besser.
-        // Bei Alert 1.0 verdoppeln wir theoretisch seine Sehstärke im Halbdunkel.
         double alertMultiplier = 1.0 + (alertLevel * 1.0); 
 
-        // 2. Proximity Awareness (Der "Ich stehe direkt vor dir"-Check)
         double distance = player.distanceTo(observer);
         
-        // Wenn du unter 5 Blöcke entfernt bist UND er grob in deine Richtung schaut
         if (distance < 5.0 && dot > 0.5) {
-            // Je näher du bist (0 bis 5) und je misstrauischer der Mob, desto extremer der Boost.
-            // proximityBoost ist 1.0 wenn du in ihm stehst, und 0.0 bei 5 Blöcken Entfernung.
             double proximityBoost = (5.0 - distance) / 5.0; 
-            
-            // WICHTIG: Wir addieren das direkt auf den baseScore auf! 
-            // So durchbricht er die Dunkelheit/Camouflage, selbst wenn baseScore 0.0 war.
             baseScore += (proximityBoost * alertLevel); 
         }
 
@@ -77,17 +78,14 @@ public class StealthMath {
         Level level = target.level();
         BlockPos pos = target.blockPosition();
 
-        // 1. Statisches Licht + Globaler Multiplier
         int staticLight = level.getRawBrightness(pos, level.getSkyDarken());
-        
-        // Config: Overall Lightlevel
+
         double lightAdd = StealthConfig.COMMON.GLOBAL_LIGHT.get();
         double adjustedLight = staticLight + lightAdd;
 
         double effectiveLight = adjustedLight;
         
         if (adjustedLight < 15 && !observerHasNightVision) {
-            // 2. Dynamisches Licht (nur wenn Config an)
             if (StealthConfig.COMMON.DYNAMIC_LIGHTS_ENABLED.get()) {
                 int dynamicLight = calculateDynamicLightAtTarget(target);
                 effectiveLight = Math.max(adjustedLight, dynamicLight + lightAdd);
@@ -100,7 +98,6 @@ public class StealthMath {
 
         double lightFactor = Math.pow(effectiveLight / 15.0, 2.0);
 
-        // --- BEWEGUNG ---
         double movementSpeed;
         if (target instanceof Player p) {
             float currentWalkDist = p.walkDist;
@@ -117,18 +114,26 @@ public class StealthMath {
             movementFactor = 0.8; 
         }
 
-        // --- CAMOUFLAGE ATTRIBUT ---
-        // Hier wird das Attribut genutzt, damit andere Mods es beeinflussen können.
         double camoValue = 0.0;
         try {
             var attr = target.getAttribute(StealthAttributes.CAMOUFLAGE.get());
             if (attr != null) camoValue = attr.getValue();
         } catch (Exception ignored) {}
-        
-        // Camouflage reduziert die Sichtbarkeit (1.0 Camo = 0.0 Sichtbarkeit)
-        double attributeFactor = Math.max(0.0, 1.0 - camoValue);
 
-        return Mth.clamp(lightFactor * movementFactor * attributeFactor, 0.0, 1.0);
+        double attributeFactor = Math.max(0.0, 1.0 - camoValue);
+// Invis copied Vanilla logic
+        double invisFactor = 1.0;
+        if (target.hasEffect(MobEffects.INVISIBILITY)) {
+            invisFactor = 0.07; 
+            for (ItemStack stack : target.getArmorSlots()) {
+                if (!stack.isEmpty()) {
+                    invisFactor += 0.175; 
+                }
+            }
+            invisFactor = Math.min(invisFactor, 1.0);
+        }
+
+        return Mth.clamp(lightFactor * movementFactor * attributeFactor * invisFactor, 0.0, 1.0);
     }
 
     private static int calculateDynamicLightAtTarget(LivingEntity target) {
@@ -190,14 +195,12 @@ public class StealthMath {
     public static double getArmorNoiseMultiplier(LivingEntity entity) {
         checkConfigCache(entity.level());
         double noiseFromArmor = 0.0;
-        
-        // 1. Basis-Lärm aus der Config berechnen (Rüstungsmaterial)
+
         for (ItemStack stack : entity.getArmorSlots()) {
             if (stack.isEmpty()) continue;
             
             if (stack.getItem() instanceof ArmorItem armor) {
                  String matName = armor.getMaterial().getName();
-                 // Robustheit: Manche Mods nutzen "modid:material", wir wollen nur "material"
                  if (matName.contains(":")) {
                      matName = matName.split(":")[1];
                  }
@@ -210,9 +213,6 @@ public class StealthMath {
             }
         }
         
-        // 2. MUFFLING ATTRIBUT anwenden
-        // Das Attribut erlaubt anderen Mods, den Lärm zu reduzieren (oder zu erhöhen).
-        // 0.0 = Normal, 1.0 = Lautlos (Muffling)
         double mufflingValue = 0.0;
         try {
             var attr = entity.getAttribute(StealthAttributes.MUFFLING.get());
@@ -221,8 +221,6 @@ public class StealthMath {
             }
         } catch (Exception ignored) {}
 
-        // Berechnung: (Basis + Rüstungslärm) * (1.0 - Muffling)
-        // Wenn Muffling 1.0 ist, ist das Ergebnis 0.0 (Lautlos).
         double totalNoise = (1.0 + noiseFromArmor) * Math.max(0.0, 1.0 - mufflingValue);
         
         return totalNoise; 

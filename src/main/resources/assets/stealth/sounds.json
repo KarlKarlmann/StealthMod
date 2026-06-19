@@ -1,12 +1,22 @@
 {
-  "detected": {
-    "category": "player",
-    "subtitle": "subtitles.stealth.detected",
-    "sounds": [
-      {
-        "name": "stealth:detected",
-        "stream": false
-      }
-    ]
-  }
+	"detected": {
+		"category": "player",
+		"subtitle": "subtitles.stealth.detected",
+		"sounds": [
+			{
+				"name": "stealth:detected",
+				"stream": false
+			}
+		]
+	},
+	"backstab": {
+		"category": "player",
+		"subtitle": "subtitles.stealth.backstab",
+		"sounds": [
+			{
+				"name": "stealth:backstab",
+				"stream": false
+			}
+		]
+	}
 }
