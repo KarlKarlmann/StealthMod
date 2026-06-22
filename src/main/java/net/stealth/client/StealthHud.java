@@ -1,7 +1,6 @@
 package net.stealth.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Mob;
@@ -16,13 +15,19 @@ import net.stealth.capability.StealthStateProvider;
 import net.stealth.config.StealthConfig;
 import net.stealth.registry.StealthSounds;
 import net.stealth.util.StealthMath;
+import net.stealth.util.StealthTextureHelper;
 
 import java.util.List;
 
+/**
+ * ARCHITEKTUR: DYNAMIC STEALTH HUD RENDERER
+ * Zeichnet das Auge (Bedrohungsgrad), den Meucheldolch (Backstab-Indikator)
+ * und die Schallwellen (Geräuschepegel) auf den Bildschirm des Spielers.
+ * Alle Koordinaten beziehen sich linear auf die exakte Bildschirmmitte (CENTER).
+ */
 @Mod.EventBusSubscriber(modid = StealthMod.MODID, value = net.minecraftforge.api.distmarker.Dist.CLIENT)
 public class StealthHud {
 
-    // Texturen
     private static final ResourceLocation TEX_EYE_CLOSED = new ResourceLocation(StealthMod.MODID, "textures/gui/eyeclosed.png");
     private static final ResourceLocation TEX_EYE_HALF = new ResourceLocation(StealthMod.MODID, "textures/gui/eyehalfclosed.png");
     private static final ResourceLocation TEX_EYE_OPEN = new ResourceLocation(StealthMod.MODID, "textures/gui/eyeopen.png");
@@ -33,30 +38,20 @@ public class StealthHud {
     private static final ResourceLocation TEX_WAVE_1 = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_1.png");
     private static final ResourceLocation TEX_WAVE_2 = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_2.png");
     private static final ResourceLocation TEX_WAVE_3 = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_3.png");
-    private static final ResourceLocation TEX_WAVE_1_L = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_1_l.png");
-    private static final ResourceLocation TEX_WAVE_2_L = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_2_l.png");
-    private static final ResourceLocation TEX_WAVE_3_L = new ResourceLocation(StealthMod.MODID, "textures/gui/sound_wave_3_l.png");
 
     private static float currentDisplayNoise = 0.0f;
     private static float currentVisibility = 0.0f;
-    
-    // NEU: Wir merken uns das ThreatLevel vom letzten Frame, um Übergänge zu erkennen
     private static ThreatLevel lastThreatLevel = ThreatLevel.NONE;
+    private static boolean configLoaded = false;
 
     public static void triggerNoise(float volume) {
         currentDisplayNoise = Math.min(2.5f, currentDisplayNoise + volume);
     }
 
     private enum ThreatLevel {
-        NONE(0),       
-        WATCHED(1),    
-        SUSPICIOUS(2), 
-        HUNTED(3);     
-
-        int severity;
-        ThreatLevel(int severity) {
-            this.severity = severity;
-        }
+        NONE(0), WATCHED(1), SUSPICIOUS(2), HUNTED(3);
+        final int severity;
+        ThreatLevel(int severity) { this.severity = severity; }
     }
 
     public static void updateVisibility(float visibility) {
@@ -68,6 +63,12 @@ public class StealthHud {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
+        // Lädt die Properties-Datei einmalig auf Clientseite aus dem Ressourcen-System
+        if (!configLoaded) {
+            StealthHudConfig.load();
+            configLoaded = true;
+        }
+
         boolean isHudEnabled = true;
         try {
             if (StealthConfig.CLIENT != null && StealthConfig.CLIENT.HUD_ENABLED != null) {
@@ -78,36 +79,27 @@ public class StealthHud {
 
         if (event.getOverlay() != VanillaGuiOverlay.CROSSHAIR.type()) return;
         
-        // Wir berechnen das ThreatLevel VOR dem Schleichen-Check, damit wir saubere Übergänge tracken
         ThreatLevel currentThreat = getThreatLevel(mc, mc.player);
 
-        // --- SOUND LOGIK ---
-        // Wenn man schleicht, das aktuelle Level HUNTED ist UND es im letzten Frame noch NICHT HUNTED war:
+        // Soundeffekt abspielen, wenn der Spieler entdeckt wird
         if (mc.player.isCrouching() && currentThreat == ThreatLevel.HUNTED && lastThreatLevel != ThreatLevel.HUNTED) {
-            // Spielt den Sound lokal nur für diesen Client ab (Volume 1.0, Pitch 1.0)
             mc.player.playSound(StealthSounds.DETECTED.get(), 1.0f, 1.0f);
         }
 
-        // Speichere das aktuelle Level für den nächsten Tick
         lastThreatLevel = currentThreat;
 
-        // Wenn man nicht schleicht, render das HUD nicht
+        // Das HUD wird nur angezeigt, wenn der Spieler schleicht (croucht)
         if (!mc.player.isCrouching()) return;
 
-        // Wir übergeben das bereits berechnete currentThreat, um Performance zu sparen
         renderStealthHud(event, mc, mc.player, currentThreat);
     }
 
     private static void renderStealthHud(RenderGuiOverlayEvent.Post event, Minecraft mc, Player player, ThreatLevel maxThreat) {
         int width = event.getWindow().getGuiScaledWidth();
         int height = event.getWindow().getGuiScaledHeight();
-        int centerX = width / 2;
-        int centerY = height / 2;
-
-        PoseStack pose = event.getGuiGraphics().pose();
 
         // ---------------------------------------------------------
-        // A. BACKSTAB ICON
+        // A. MEUCHEL-DOLCH RENDERER
         // ---------------------------------------------------------
         boolean backstabEnabled = true;
         try {
@@ -120,17 +112,18 @@ public class StealthHud {
                 RenderSystem.defaultBlendFunc();
                 RenderSystem.setShaderColor(1.0f, 0.0f, 0.0f, 0.9f); 
                 
-                int iconSize = 16;
-                int renderY = centerY + 14; 
+                // Nutzt die echten Bilddimensionen des Dolch-Icons
+                StealthTextureHelper.TextureDimensions dims = StealthTextureHelper.getDimensions(TEX_DAGGER, 16, 16);
+                int x = getAbsoluteX(StealthHudConfig.daggerX, dims.width, width);
+                int y = getAbsoluteY(StealthHudConfig.daggerY, dims.height, height);
                 
-                event.getGuiGraphics().blit(TEX_DAGGER, centerX - iconSize/2, renderY, 0, 0, iconSize, iconSize, iconSize, iconSize);
-                
+                event.getGuiGraphics().blit(TEX_DAGGER, x, y, 0, 0, dims.width, dims.height, dims.width, dims.height);
                 RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             }
         }
 
         // ---------------------------------------------------------
-        // B. DAS AUGE (Sichtbarkeits-Indikator)
+        // B. AUGE RENDERER
         // ---------------------------------------------------------
         ResourceLocation currentTexture;
         if (maxThreat == ThreatLevel.HUNTED) {
@@ -156,47 +149,64 @@ public class StealthHud {
             }
         }
 
-        int eyeSize = 16;
-        int eyeY = centerY - 24; 
-
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderColor(r, g, b, 0.9f); 
-        event.getGuiGraphics().blit(currentTexture, centerX - eyeSize/2, eyeY, 0, 0, eyeSize, eyeSize, eyeSize, eyeSize);
+        RenderSystem.setShaderColor(r, g, b, 0.9f);
+
+        // Nutzt die echten Maße des geladenen Auges
+        StealthTextureHelper.TextureDimensions eyeDims = StealthTextureHelper.getDimensions(currentTexture, 16, 16);
+        int eyeX = getAbsoluteX(StealthHudConfig.eyeX, eyeDims.width, width);
+        int eyeY = getAbsoluteY(StealthHudConfig.eyeY, eyeDims.height, height);
+
+        event.getGuiGraphics().blit(currentTexture, eyeX, eyeY, 0, 0, eyeDims.width, eyeDims.height, eyeDims.width, eyeDims.height);
 
         // ---------------------------------------------------------
-        // C. SCHALLWELLEN (Noise Feedback)
+        // C. SCHALLWELLEN (Combined PNG Renderer)
         // ---------------------------------------------------------
         if (currentDisplayNoise > 0.0f) {
             currentDisplayNoise = Math.max(0.0f, currentDisplayNoise - 0.03f);
 
-            int waveSize = 16;
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-            if (currentDisplayNoise > 0.2f) {
-                int rightX = centerX + (eyeSize / 2) + 2;
-                int leftX = centerX - (eyeSize / 2) - 2 - waveSize;
-                event.getGuiGraphics().blit(TEX_WAVE_1, rightX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
-                event.getGuiGraphics().blit(TEX_WAVE_1_L, leftX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
-            }
-
-            if (currentDisplayNoise > 0.9f) {
-                int rightX = centerX + (eyeSize / 2) + 2 + 4;
-                int leftX = centerX - (eyeSize / 2) - 2 - waveSize - 4;
-                event.getGuiGraphics().blit(TEX_WAVE_2, rightX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
-                event.getGuiGraphics().blit(TEX_WAVE_2_L, leftX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
-            }
-
+            ResourceLocation waveTex = null;
             if (currentDisplayNoise > 1.6f) {
-                int rightX = centerX + (eyeSize / 2) + 2 + 8;
-                int leftX = centerX - (eyeSize / 2) - 2 - waveSize - 8;
-                event.getGuiGraphics().blit(TEX_WAVE_3, rightX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
-                event.getGuiGraphics().blit(TEX_WAVE_3_L, leftX, eyeY, 0, 0, waveSize, waveSize, waveSize, waveSize);
+                waveTex = TEX_WAVE_3;
+            } else if (currentDisplayNoise > 0.9f) {
+                waveTex = TEX_WAVE_2;
+            } else if (currentDisplayNoise > 0.2f) {
+                waveTex = TEX_WAVE_1;
+            }
+
+            if (waveTex != null) {
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                
+                // Schallwellen-Dimension aus PNG laden (standardmäßig 48x16 px)
+                StealthTextureHelper.TextureDimensions sDims = StealthTextureHelper.getDimensions(waveTex, 48, 16);
+                int sx = getAbsoluteX(StealthHudConfig.soundX, sDims.width, width);
+                int sy = getAbsoluteY(StealthHudConfig.soundY, sDims.height, height);
+                
+                event.getGuiGraphics().blit(waveTex, sx, sy, 0, 0, sDims.width, sDims.height, sDims.width, sDims.height);
             }
         }
 
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
+    }
+
+    // =========================================================================
+    // POSITIONS-BERECHNUNG (REIN CENTER-BASIERT)
+    // =========================================================================
+
+    /**
+     * Berechnet die absolute Pixel-Koordinate auf der X-Achse relativ zur Bildschirmmitte.
+     */
+    public static int getAbsoluteX(int offset, int imgWidth, int screenWidth) {
+        return (screenWidth / 2) - (imgWidth / 2) + offset;
+    }
+
+    /**
+     * Berechnet die absolute Pixel-Koordinate auf der Y-Achse relativ zur Bildschirmmitte.
+     */
+    public static int getAbsoluteY(int offset, int imgHeight, int screenHeight) {
+        return (screenHeight / 2) - (imgHeight / 2) + offset;
     }
 
     private static ThreatLevel getThreatLevel(Minecraft mc, Player player) {

@@ -31,8 +31,8 @@ public interface IStealthState extends INBTSerializable<CompoundTag> {
     int getTimeSinceLastSeen();
     void setTimeSinceLastSeen(int ticks);
     void incrementTimeSinceLastSeen();
-    void addKnownEnemy(java.util.UUID uuid);
-    boolean isKnownEnemy(java.util.UUID uuid);
+    void addRawLivingChangeTargetEventTarget(java.util.UUID uuid);
+    boolean isRawLivingChangeTargetEventTarget(java.util.UUID uuid);
     void clearSuspiciousLocation();
     
     // --- NEU: DAS KAMPF-GEDÄCHTNIS (ITarget) ---

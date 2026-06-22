@@ -9,7 +9,7 @@ import java.util.List;
 
 @Mod.EventBusSubscriber
 public class StealthConfig {
-    // FIX: Renamed from COMMON_SPEC to SPEC so StealthMod.java can find it
+    // SPEC is required by StealthMod.java for loading the config
     public static final ForgeConfigSpec SPEC; 
     public static final CommonConfig COMMON;
     
@@ -18,7 +18,7 @@ public class StealthConfig {
 
     static {
         final Pair<CommonConfig, ForgeConfigSpec> commonSpecPair = new ForgeConfigSpec.Builder().configure(CommonConfig::new);
-        SPEC = commonSpecPair.getRight(); // Assignment to SPEC
+        SPEC = commonSpecPair.getRight();
         COMMON = commonSpecPair.getLeft();
 
         final Pair<ClientConfig, ForgeConfigSpec> clientSpecPair = new ForgeConfigSpec.Builder().configure(ClientConfig::new);
@@ -28,12 +28,19 @@ public class StealthConfig {
 
     public static class ClientConfig {
         public final ForgeConfigSpec.BooleanValue HUD_ENABLED;
+        public final ForgeConfigSpec.BooleanValue HUD_EDITOR_BUTTON_ENABLED;
 
         ClientConfig(ForgeConfigSpec.Builder builder) {
             builder.push("client");
+            
             HUD_ENABLED = builder
-                    .comment("Toggles the Stealth HUD (eye/dagger) on or off.")
+                    .comment("Toggles the entire Stealth HUD (eye, dagger, sound waves) on or off in-game.")
                     .define("hud_enabled", true);
+
+            HUD_EDITOR_BUTTON_ENABLED = builder
+                    .comment("Toggles the 'Stealth HUD' button in the pause menu (ESC) on or off.")
+                    .define("hud_editor_button_enabled", true);
+                    
             builder.pop();
         }
     }
@@ -48,15 +55,17 @@ public class StealthConfig {
         public final ForgeConfigSpec.ConfigValue<String> BACKSTAB_PARTICLE;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> BLACKLISTED_MOBS;
         public final ForgeConfigSpec.BooleanValue BOOST_IGNORED_MOBS_RANGE;        
+        
         // --- LIGHT ---
         public final ForgeConfigSpec.DoubleValue GLOBAL_LIGHT;
         public final ForgeConfigSpec.BooleanValue DYNAMIC_LIGHTS_ENABLED;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> DYNAMIC_LIGHT_SOURCES;
 
         // --- VIBRATIONS ---
-		public final ForgeConfigSpec.IntValue BASE_HEARING_RANGE;
+        public final ForgeConfigSpec.IntValue BASE_HEARING_RANGE;
         public final ForgeConfigSpec.BooleanValue VIBRATION_DETECTION_ENABLED;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> VIBRATION_PRIORITIES;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> ESCALATION_EVENTS;
 
         // --- ARMOR & NOISE ---
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> ARMOR_NOISE_MULTIPLIERS;
@@ -69,23 +78,23 @@ public class StealthConfig {
                     .defineInRange("base_detection_range", 16.0, 1.0, 128.0);
             
             FOV_DEGREES = builder
-                    .comment("Field of view of mobs in degrees.")
+                    .comment("Field of view (FOV) of mobs in degrees.")
                     .defineInRange("fov_degrees", 80.0, 10.0, 360.0);
             
             BACKSTAB_ENABLED = builder
-                    .comment("Toggles the backstab damage bonus on or off.")
+                    .comment("Enables or disables the damage bonus for attacks from behind.")
                     .define("backstab_enabled", true);
 
             BACKSTAB_MULTIPLIER = builder
-                    .comment("Damage multiplier for attacks from behind.")
+                    .comment("Damage multiplier for successful backstab attacks.")
                     .defineInRange("backstab_multiplier", 3.0, 1.0, 100.0);
 
             BACKSTAB_SOUND = builder
-                    .comment("Sound played on a successful backstab. Format: 'modid:sound_event' (use 'none' to disable)")
+                    .comment("Sound effect played on a successful backstab attack. Format: 'modid:sound_event' (use 'none' to disable)")
                     .define("backstab_sound", "stealth:backstab");
 
             BACKSTAB_PARTICLE = builder
-                    .comment("Particle spawned on a successful backstab. Format: 'modid:particle_type' (use 'none' to disable)")
+                    .comment("Particle effect spawned on a successful backstab attack. Format: 'modid:particle_type' (use 'none' to disable)")
                     .define("backstab_particle", "minecraft:crit");
 					
             BLACKLISTED_MOBS = builder
@@ -98,7 +107,7 @@ public class StealthConfig {
                     ), obj -> obj instanceof String);
 
             BOOST_IGNORED_MOBS_RANGE = builder
-                    .comment("Should blacklisted/tagged mobs still get their follow range boosted to match the stealth config?")
+                    .comment("Should the follow range of blacklisted mobs still be boosted to match the stealth config values?")
                     .define("boost_ignored_mobs_range", false);
 					
             builder.pop();
@@ -106,15 +115,15 @@ public class StealthConfig {
             builder.push("light");
             
             GLOBAL_LIGHT = builder
-                    .comment("The overall light level. Makes it harder to hide.")
+                    .comment("Artificially increases the overall base light level (makes hiding more difficult).")
                     .defineInRange("overall_light_multiplier", 0.0, 0.0, 15.0);
 
             DYNAMIC_LIGHTS_ENABLED = builder
-                    .comment("Should the light from held items (torches, etc.) increase visibility?")
+                    .comment("Should the light from held items (torches, etc.) increase the player's visibility?")
                     .define("dynamic_lights_enabled", true);
 
             DYNAMIC_LIGHT_SOURCES = builder
-                    .comment("List of items and their light level in the format 'modid:item;level'.")
+                    .comment("List of items and their light levels in the format 'modid:item;level'.")
                     .defineList("dynamic_light_sources", Arrays.asList(
                             "minecraft:torch;14",
                             "minecraft:soul_torch;10",
@@ -131,15 +140,15 @@ public class StealthConfig {
             builder.push("vibrations");
 
             VIBRATION_DETECTION_ENABLED = builder
-                    .comment("Should mobs react to vibrations (footsteps, breaking blocks)?")
+                    .comment("Should mobs react to vibrations (footsteps, block breaking, etc.)?")
                     .define("vibration_detection_enabled", true);
 
-			BASE_HEARING_RANGE = builder
-                    .comment("Base hearing range of mobs in blocks (how far they can detect vibrations).")
+            BASE_HEARING_RANGE = builder
+                    .comment("Base hearing range of mobs in blocks (how far they detect vibrations).")
                     .defineInRange("base_hearing_range", 16, 1, 128);
 					
             VIBRATION_PRIORITIES = builder
-                    .comment("Priority of game events. Format: 'game_event_id;priority' (Higher = More important).")
+                    .comment("Priority of vibration events. Format: 'game_event_id;priority' (Higher = More important).")
                     .defineList("vibration_priorities", Arrays.asList(
                             "minecraft:projectile_land;10.0",
                             "minecraft:explode;10.0",
@@ -150,6 +159,16 @@ public class StealthConfig {
                             "minecraft:splash;6.0",
                             "minecraft:swim;4.0",
                             "minecraft:flap;3.0"
+                    ), obj -> obj instanceof String);
+
+            ESCALATION_EVENTS = builder
+                    .comment("List of game events that are considered worldwide escalations. Mobs will always investigate these with full priority, even if they don't know the player yet.")
+                    .defineList("escalation_events", Arrays.asList(
+                            "minecraft:entity_damage",
+                            "minecraft:entity_die",
+                            "minecraft:entity_roar",
+                            "minecraft:explode",
+                            "minecraft:projectile_shoot"
                     ), obj -> obj instanceof String);
 
             builder.pop();

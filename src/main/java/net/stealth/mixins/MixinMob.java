@@ -92,6 +92,7 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
     private void tickStealthVibration(CallbackInfo ci) {
         Level level = this.level();
         if (level instanceof ServerLevel serverLevel && StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) {
+            // CRITICAL FIX: Minecraft muss aktiv mitgeteilt werden, wohin sich der Mob bewegt hat
             VibrationSystem.Ticker.tick(serverLevel, this.stealth$vibrationData, this.getVibrationUser());
         }
     }
@@ -130,7 +131,7 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
         return this; 
     }
 
-	@Override
+    @Override
     public int getListenerRadius() {
         return StealthConfig.COMMON.BASE_HEARING_RANGE.get();
     }
@@ -171,9 +172,9 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
         ((Mob)(Object)this).getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
             
             float priority = getPriorityForEvent(event);
-            boolean isEscalation = event == GameEvent.ENTITY_DAMAGE || event == GameEvent.ENTITY_DIE || event == GameEvent.ENTITY_ROAR || event == GameEvent.EXPLODE;
+            boolean isEscalation = isEscalationEvent(event);
             
-            // Den WAHREN Verursacher ausfindig machen
+            // Resolve true cause
             Entity trueSource = projectileOwner != null ? projectileOwner : emitter;
             boolean isEnemy = wouldAttack(trueSource);
 
@@ -192,18 +193,14 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
                 }
                 priority *= noiseMultiplier;
             }
-			//max Malus 0.8f
-			float distanceMalus = distance * (0.8f / StealthConfig.COMMON.BASE_HEARING_RANGE.get().floatValue());
+            
+            float distanceMalus = distance * (0.8f / StealthConfig.COMMON.BASE_HEARING_RANGE.get().floatValue());
             priority -= distanceMalus;
 
             if (priority > 0.5f) {
                 state.setSuspiciousLocation(pos.getCenter(), priority, level.getGameTime());
                 
-                // --- NEUES KONZEPT: Maximales Alert-Level basierend auf Priorität ---
-                
-                // Ein Faktor von 0.1 bedeutet z.B.:
-                // Prio 5.0 (Schritt) -> max 0.5 Alert
-                // Prio 8.0 (Block abbauen) -> max 0.8 Alert
+                // Maximum alert bounds based on loudness
                 float targetAlertLevel = isEscalation ? 1.0f : Math.min(0.8f, priority * 0.1f);
                 if (state.getAlertLevel() < targetAlertLevel) {
 
@@ -221,14 +218,35 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
     }
 
     @Unique
+    private boolean isEscalationEvent(GameEvent event) {
+        ResourceLocation key = BuiltInRegistries.GAME_EVENT.getKey(event);
+        if (key == null) return false;
+        
+        try {
+            List<? extends String> escalations = StealthConfig.COMMON.ESCALATION_EVENTS.get();
+            return escalations.contains(key.toString());
+        } catch (Exception e) {
+            return event == GameEvent.ENTITY_DAMAGE 
+                || event == GameEvent.ENTITY_DIE 
+                || event == GameEvent.ENTITY_ROAR 
+                || event == GameEvent.EXPLODE
+                || event == GameEvent.PROJECTILE_SHOOT;
+        }
+    }
+
+    @Unique
     private boolean wouldAttack(@Nullable Entity emitter) {
         if (!(emitter instanceof LivingEntity target)) return false;
         Mob me = (Mob)(Object)this;
-
+		// ACHTUNG: isRawLivingChangeTargetEventTarget() prüft NICHT "wurde schon mal stealth-konform gesehen",
+		// sondern nur "hat Vanillas eigenes Target-Goal diesen Spieler IRGENDWANN als Ziel versucht
+		// zu setzen" - siehe Kommentar in ModCommonEvents#onSetTarget. Das passiert oft schon beim
+		// ersten Vanilla-Kontakt, bevor unsere eigenen LOS/FOV-Checks überhaupt greifen, und wird
+		// auch durch ein gecanceltes Targeting-Event nicht wieder zurückgenommen.
         if (!me.canAttack(target) || me.isAlliedTo(target)) return false;
-
+				
         return me.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> 
-            state.isKnownEnemy(target.getUUID())
+            state.isRawLivingChangeTargetEventTarget(target.getUUID())
         ).orElse(false);
     }
 

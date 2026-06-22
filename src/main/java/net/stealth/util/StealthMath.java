@@ -109,7 +109,7 @@ public class StealthMath {
 
         double movementFactor = 0.5; 
         if (movementSpeed > 0.0061175) {
-            movementFactor = target.isSprinting() ? 1.5 : (target.isCrouching() ? 1.5 : 1.0);
+            movementFactor = target.isSprinting() ? 1.5 : (target.isCrouching() ? 1.0 : 1.1);
         } else if (target.isCrouching()) {
             movementFactor = 0.8; 
         }

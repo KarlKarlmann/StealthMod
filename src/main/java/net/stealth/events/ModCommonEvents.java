@@ -101,11 +101,20 @@ public class ModCommonEvents {
         if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) || mob.getType().is(net.stealth.registry.StealthTags.Entities.IGNORES_STEALTH)) {
             return;
         }
-
+        // WICHTIG: Dieser Block läuft IMMER, sobald Vanilla versucht den Spieler zu targeten -
+        // also bereits BEVOR die Stealth-Checks (LOS/FOV/Distance) weiter unten ausgewertet werden
+        // und das Event ggf. per event.setCanceled(true) wieder verwerfen.
+        // "RawLivingChangeTargetEventTarget" heißt deshalb NICHT "Mob hatte den Spieler gültig (stealth-konform) im Visier",
+        // sondern nur "Vanillas eigenes Target-Goal hat irgendwann mal versucht, ihn zu targeten"
+        // (Vanilla-LOS + FollowRange reichen dafür, die sind großzügiger als unsere Stealth-Regeln).
+        // Ein gecanceltes Event nimmt den Eintrag NICHT zurück - es gibt auch kein removeRawLivingChangeTargetEventTarget().
+        // Konsequenz für die Hörlogik (siehe MixinMob#wouldAttack): isRawLivingChangeTargetEventTarget() ist daher in der
+        // Praxis fast immer schon true, sobald der Spieler einmal in Vanillas Erkennungsradius war -
+        // die 90%-Dämpfung für "unbekannte" Quellen in onReceiveVibration greift seltener als man denkt.
         LivingEntity newTarget = event.getNewTarget();
         if (newTarget != null) {
             mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
-                state.addKnownEnemy(newTarget.getUUID());
+                state.addRawLivingChangeTargetEventTarget(newTarget.getUUID());
             });
         }
 
@@ -227,7 +236,7 @@ public class ModCommonEvents {
                 Vec3 susp = state.getSuspiciousLocation();
                 Vec3 active = state.getActiveDistraction();
 
-                if (susp != null && state.getAlertLevel() >= 0.3f) {
+                if (susp != null && state.getAlertLevel() >= 0.295f) {
 					if (active == null || !susp.equals(active)) {
 						state.setActiveDistraction(susp);
 						state.clearSuspiciousLocation();

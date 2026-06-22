@@ -26,16 +26,16 @@ public class StealthState implements IStealthState {
     // NEU: Das ITarget (Kampf-Gedächtnis)
     private UUID iTarget = null;
 
-    private final java.util.Set<java.util.UUID> knownEnemies = new java.util.HashSet<>();
+    private final java.util.Set<java.util.UUID> RawLivingChangeTargetEventTargets = new java.util.HashSet<>();
 
     @Override
-    public void addKnownEnemy(java.util.UUID uuid) {
-        this.knownEnemies.add(uuid);
+    public void addRawLivingChangeTargetEventTarget(java.util.UUID uuid) {
+        this.RawLivingChangeTargetEventTargets.add(uuid);
     }
 
     @Override
-    public boolean isKnownEnemy(java.util.UUID uuid) {
-        return this.knownEnemies.contains(uuid);
+    public boolean isRawLivingChangeTargetEventTarget(java.util.UUID uuid) {
+        return this.RawLivingChangeTargetEventTargets.contains(uuid);
     }
 
     @Override
@@ -125,7 +125,7 @@ public class StealthState implements IStealthState {
         this.iTarget = other.getITarget();
         
         if (other instanceof StealthState impl) {
-            this.knownEnemies.addAll(impl.knownEnemies);
+            this.RawLivingChangeTargetEventTargets.addAll(impl.RawLivingChangeTargetEventTargets);
         }
     }
 
