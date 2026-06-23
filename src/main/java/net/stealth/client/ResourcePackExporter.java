@@ -65,6 +65,7 @@ public class ResourcePackExporter {
             File packDir = new File(mcDir, "resourcepacks/" + folderName);
             File metaFile = new File(packDir, "pack.mcmeta");
             File readmeFile = new File(packDir, "readme_guide.txt");
+            File preferencesFile = new File(packDir, "preferences.txt");
             File targetPackIcon = new File(packDir, "pack.png");
             File hudTexturesDir = new File(packDir, "assets/stealth/textures/gui");
             File configDir = new File(packDir, "assets/stealth/config");
@@ -110,7 +111,23 @@ public class ResourcePackExporter {
                 Files.writeString(readmeFile.toPath(), readmeContent, java.nio.charset.StandardCharsets.UTF_8);
             }
 
-            // 3. Aktuelle Koordinaten aus dem RAM (StealthHudConfig) in die properties-Datei schreiben
+            // 3. preferences.txt für Debugging schreiben (wird immer überschrieben, um aktuell zu bleiben!)
+            int screenWidth = mc.getWindow().getScreenWidth();
+            int screenHeight = mc.getWindow().getScreenHeight();
+            double guiScale = mc.getWindow().getGuiScale();
+            
+            String prefContent = "=== STEALTH HUD CREATOR PREFERENCES ===\n" +
+                    "Dieses Pack wurde mit folgenden Bildschirm-Einstellungen im Editor exportiert:\n\n" +
+                    "Aufloesung: " + screenWidth + "x" + screenHeight + " Pixel\n" +
+                    "GUI-Skalierung (GUI Scale): " + guiScale + "\n\n" +
+                    "Hinweis zur Fehlersuche:\n" +
+                    "Wenn du dieses Resourcepack heruntergeladen hast und das HUD bei dir an\n" +
+                    "komplett falschen Stellen auf dem Bildschirm auftaucht, liegt das meistens\n" +
+                    "an einer abweichenden GUI-Skalierung. Vergleiche deine Video Settings im Spiel\n" +
+                    "mit den oben genannten Werten des Creators.";
+            Files.writeString(preferencesFile.toPath(), prefContent, java.nio.charset.StandardCharsets.UTF_8);
+
+            // 4. Aktuelle Koordinaten aus dem RAM (StealthHudConfig) in die properties-Datei schreiben
             File defaultHudFile = new File(configDir, "default_hud.properties");
             Properties p = new Properties();
             p.setProperty("eye_x", String.valueOf(StealthHudConfig.eyeX));
@@ -135,7 +152,7 @@ public class ResourcePackExporter {
                 }
             }
 
-            // 4. HUD-Texturen sicher über den ResourceManager klonen!
+            // 5. HUD-Texturen sicher über den ResourceManager klonen!
             int exportedCount = 0;
             for (String assetName : HUD_ASSETS) {
                 File targetFile = new File(hudTexturesDir, assetName);

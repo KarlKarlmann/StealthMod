@@ -19,12 +19,9 @@ import net.minecraft.world.level.gameevent.PositionSource;
 import net.minecraft.world.level.gameevent.vibrations.VibrationSystem;
 import net.minecraft.world.level.gameevent.vibrations.VibrationInfo; 
 import net.minecraft.world.level.gameevent.DynamicGameEventListener;
-import net.minecraftforge.network.PacketDistributor;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.stealth.capability.StealthStateProvider;
 import net.stealth.config.StealthConfig;
-import net.stealth.network.ClientBoundSyncStealthPacket;
-import net.stealth.network.StealthNetwork;
 import net.stealth.util.StealthMath;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
@@ -65,21 +62,22 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
             @Override
             public boolean handleGameEvent(ServerLevel level, GameEvent event, GameEvent.Context context, net.minecraft.world.phys.Vec3 pos) {
                 if (!StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) return false;
-
                 VibrationSystem.Data data = MixinMob.this.stealth$vibrationData;
                 VibrationSystem.User user = MixinMob.this;
+
+                if (data.getCurrentVibration() != null) {
+                    return false;
+                }
 
                 if (!user.isValidVibration(event, context)) {
                     return false;
                 } else {
                     float distance = (float)pos.distanceTo(MixinMob.this.position());
-                    int travelTime = user.calculateTravelTimeInTicks(distance);
                     
                     data.setCurrentVibration(new VibrationInfo(
                         event, distance, pos, context.sourceEntity()
                     ));
-                    
-                    data.setTravelTimeInTicks(travelTime);
+                    data.setTravelTimeInTicks(0);
                     return true;
                 }
             }
@@ -92,7 +90,9 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
     private void tickStealthVibration(CallbackInfo ci) {
         Level level = this.level();
         if (level instanceof ServerLevel serverLevel && StealthConfig.COMMON.VIBRATION_DETECTION_ENABLED.get()) {
-            // CRITICAL FIX: Minecraft muss aktiv mitgeteilt werden, wohin sich der Mob bewegt hat
+            if (this.stealth$dynamicListener != null && this.tickCount % 20 == 0) {
+                this.stealth$dynamicListener.move(serverLevel);
+            }
             VibrationSystem.Ticker.tick(serverLevel, this.stealth$vibrationData, this.getVibrationUser());
         }
     }
@@ -119,7 +119,6 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
                     .ifPresent(data -> this.stealth$vibrationData = data);
         }
     }
-
 
     @Override
     public VibrationSystem.Data getVibrationData() {
@@ -174,12 +173,9 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
             float priority = getPriorityForEvent(event);
             boolean isEscalation = isEscalationEvent(event);
             
-            // Resolve true cause
             Entity trueSource = projectileOwner != null ? projectileOwner : emitter;
-            boolean isEnemy = wouldAttack(trueSource);
 
-            // Filter
-            if (!isEnemy && !isEscalation) {
+            if (!wouldAttack(trueSource)) {
                 priority *= 0.1f; 
             }
 
@@ -200,18 +196,14 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
             if (priority > 0.5f) {
                 state.setSuspiciousLocation(pos.getCenter(), priority, level.getGameTime());
                 
-                // Maximum alert bounds based on loudness
                 float targetAlertLevel = isEscalation ? 1.0f : Math.min(0.8f, priority * 0.1f);
                 if (state.getAlertLevel() < targetAlertLevel) {
-
                     float alertGain = isEscalation ? 0.3f : 0.15f;
                     float newAlert = Math.min(targetAlertLevel, state.getAlertLevel() + alertGain);
                     state.setAlertLevel(newAlert); 
                     
-                    StealthNetwork.CHANNEL.send(
-                        PacketDistributor.TRACKING_ENTITY.with(() -> (Mob)(Object)this),
-                        new ClientBoundSyncStealthPacket(this.getId(), state.getAlertLevel())
-                    );
+                    // Wir senden kein Paket mehr direkt von hier aus. Das geänderte Alert-Level
+                    // wird automatisch beim nächsten spielerzentrierten Sync-Intervall erfasst!
                 }
             }
         });
@@ -229,8 +221,7 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
             return event == GameEvent.ENTITY_DAMAGE 
                 || event == GameEvent.ENTITY_DIE 
                 || event == GameEvent.ENTITY_ROAR 
-                || event == GameEvent.EXPLODE
-                || event == GameEvent.PROJECTILE_SHOOT;
+                || event == GameEvent.EXPLODE;
         }
     }
 
@@ -238,13 +229,8 @@ public abstract class MixinMob extends LivingEntity implements VibrationSystem, 
     private boolean wouldAttack(@Nullable Entity emitter) {
         if (!(emitter instanceof LivingEntity target)) return false;
         Mob me = (Mob)(Object)this;
-		// ACHTUNG: isRawLivingChangeTargetEventTarget() prüft NICHT "wurde schon mal stealth-konform gesehen",
-		// sondern nur "hat Vanillas eigenes Target-Goal diesen Spieler IRGENDWANN als Ziel versucht
-		// zu setzen" - siehe Kommentar in ModCommonEvents#onSetTarget. Das passiert oft schon beim
-		// ersten Vanilla-Kontakt, bevor unsere eigenen LOS/FOV-Checks überhaupt greifen, und wird
-		// auch durch ein gecanceltes Targeting-Event nicht wieder zurückgenommen.
         if (!me.canAttack(target) || me.isAlliedTo(target)) return false;
-				
+                
         return me.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> 
             state.isRawLivingChangeTargetEventTarget(target.getUUID())
         ).orElse(false);

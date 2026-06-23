@@ -47,6 +47,7 @@ public class StealthConfig {
 
     public static class CommonConfig {
         // --- GENERAL ---
+        public final ForgeConfigSpec.BooleanValue ACCURATE_HUD_SYNC;
         public final ForgeConfigSpec.DoubleValue BASE_DETECTION_RANGE;
         public final ForgeConfigSpec.DoubleValue FOV_DEGREES;
         public final ForgeConfigSpec.DoubleValue BACKSTAB_MULTIPLIER;
@@ -72,7 +73,11 @@ public class StealthConfig {
 
         CommonConfig(ForgeConfigSpec.Builder builder) {
             builder.push("general");
-            
+            ACCURATE_HUD_SYNC = builder
+                    .comment("If true, the server exactly calculates the player's visibility (incl. accurate skylight) and sends it to the HUD.",
+                             "Disable this on large servers to save massive amounts of TPS and network bandwidth! (The client will then estimate it locally).")
+                    .define("accurate_hud_sync", true);
+
             BASE_DETECTION_RANGE = builder
                     .comment("Base detection range of mobs in blocks.")
                     .defineInRange("base_detection_range", 16.0, 1.0, 128.0);
@@ -147,19 +152,70 @@ public class StealthConfig {
                     .comment("Base hearing range of mobs in blocks (how far they detect vibrations).")
                     .defineInRange("base_hearing_range", 16, 1, 128);
 					
-            VIBRATION_PRIORITIES = builder
-                    .comment("Priority of vibration events. Format: 'game_event_id;priority' (Higher = More important).")
-                    .defineList("vibration_priorities", Arrays.asList(
-                            "minecraft:projectile_land;10.0",
-                            "minecraft:explode;10.0",
-                            "minecraft:block_destroy;8.0",
-                            "minecraft:block_place;6.0",
-                            "minecraft:step;5.0",
-                            "minecraft:hit_ground;5.0",
-                            "minecraft:splash;6.0",
-                            "minecraft:swim;4.0",
-                            "minecraft:flap;3.0"
-                    ), obj -> obj instanceof String);
+VIBRATION_PRIORITIES = builder
+        .comment("Priority of vibration events. Format: 'game_event_id;priority' (Higher = More important).")
+        .defineList("vibration_priorities", Arrays.asList(
+                "minecraft:block_activate;5.0",
+                "minecraft:block_attach;4.0",
+                "minecraft:block_change;4.0",
+                "minecraft:block_close;5.0",
+                "minecraft:block_deactivate;4.0",
+                "minecraft:block_destroy;8.0",
+                "minecraft:block_detach;4.0",
+                "minecraft:block_open;5.0",
+                "minecraft:block_place;6.0",
+                "minecraft:container_close;5.0",
+                "minecraft:container_open;5.0",
+                "minecraft:drink;3.0",
+                "minecraft:eat;3.0",
+                "minecraft:elytra_glide;2.0",
+                "minecraft:entity_damage;6.0",
+                "minecraft:entity_die;8.0",
+                "minecraft:entity_dismount;3.0",
+                "minecraft:entity_interact;3.0",
+                "minecraft:entity_mount;3.0",
+                "minecraft:entity_place;4.0",
+                "minecraft:entity_roar;9.0",
+                "minecraft:entity_shake;4.0",
+                "minecraft:equip;4.0",
+                "minecraft:explode;10.0",
+                "minecraft:flap;3.0",
+                "minecraft:fluid_pickup;5.0",
+                "minecraft:fluid_place;5.0",
+                "minecraft:hit_ground;5.0",
+                "minecraft:instrument_play;7.0",
+                "minecraft:item_interact_finish;3.0",
+                "minecraft:item_interact_start;3.0",
+                "minecraft:jukebox_play;20.0",
+                "minecraft:jukebox_stop_play;4.0",
+                "minecraft:lightning_strike;15.0",
+                "minecraft:note_block_play;6.0",
+                "minecraft:prime_fuse;9.0",
+                "minecraft:projectile_land;10.0",
+                "minecraft:projectile_shoot;7.0",
+                "minecraft:sculk_sensor_tendrils_clicking;2.0",
+                "minecraft:shear;3.0",
+                "minecraft:shriek;12.0",
+                "minecraft:splash;6.0",
+                "minecraft:step;5.0",
+                "minecraft:swim;4.0",
+                "minecraft:teleport;12.0",
+                "minecraft:resonate_1;5.0",
+                "minecraft:resonate_2;5.0",
+                "minecraft:resonate_3;5.0",
+                "minecraft:resonate_4;5.0",
+                "minecraft:resonate_5;5.0",
+                "minecraft:resonate_6;5.0",
+                "minecraft:resonate_7;5.0",
+                "minecraft:resonate_8;5.0",
+                "minecraft:resonate_9;5.0",
+                "minecraft:resonate_10;5.0",
+                "minecraft:resonate_11;5.0",
+                "minecraft:resonate_12;5.0",
+                "minecraft:resonate_13;5.0",
+                "minecraft:resonate_14;5.0",
+                "minecraft:resonate_15;5.0"
+        ), obj -> obj instanceof String);
 
             ESCALATION_EVENTS = builder
                     .comment("List of game events that are considered worldwide escalations. Mobs will always investigate these with full priority, even if they don't know the player yet.")
@@ -167,8 +223,7 @@ public class StealthConfig {
                             "minecraft:entity_damage",
                             "minecraft:entity_die",
                             "minecraft:entity_roar",
-                            "minecraft:explode",
-                            "minecraft:projectile_shoot"
+                            "minecraft:explode"
                     ), obj -> obj instanceof String);
 
             builder.pop();

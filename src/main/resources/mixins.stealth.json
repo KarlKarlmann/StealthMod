@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "mixins.stealth.refmap.json",
   "mixins": [
-    "MixinMob"
+    "MixinMob",
+	"MixinGameEventDispatcher"
   ],
   "client": [],
   "minVersion": "0.8"

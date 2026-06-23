@@ -1,57 +1,64 @@
 package net.stealth.events;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.GameEventTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.event.PlayLevelSoundEvent;
-import net.minecraftforge.event.PlayLevelSoundEvent.AtEntity;
-import net.minecraftforge.event.PlayLevelSoundEvent.AtPosition;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingChangeTargetEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.registries.ForgeRegistries;
-import net.stealth.StealthMod;
 import net.stealth.ai.DistractionGoal;
 import net.stealth.capability.StealthStateProvider;
 import net.stealth.config.StealthConfig;
 import net.stealth.network.ClientBoundSoundNoisePacket;
-import net.stealth.network.ClientBoundSyncStealthPacket;
-import net.stealth.network.ClientBoundVisibilityPacket;
+import net.stealth.network.ClientBoundPlayerHudPacket;
 import net.stealth.network.StealthNetwork;
 import net.stealth.registry.StealthAttributes;
 import net.stealth.registry.StealthTags;
 import net.stealth.util.StealthMath;
-import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.world.level.gameevent.GameEvent;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.tags.GameEventTags;
-import net.minecraft.resources.ResourceLocation;
+import net.stealth.util.ThreatLevel;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.UUID;
 
 public class ModCommonEvents {
+
+    // Speicher für den Synchronisations-Status jedes Spielers zur Spam-Vermeidung
+    private static final Map<UUID, PlayerHudSyncState> HUD_SYNC_STATE = new HashMap<>();
+
+    private static class PlayerHudSyncState {
+        float lastSentVisibility = Float.NaN; // Erzwingt Initial-Sync bei NaN Vergleich
+        ThreatLevel lastSentThreat = null;
+        int ticksSinceLastSync = 0;
+    }
+
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        HUD_SYNC_STATE.remove(event.getEntity().getUUID());
+    }
 
     @SubscribeEvent
     public void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof Mob mob && !event.getLevel().isClientSide()) {
-            
-            // 1. Prüfen, ob der Mob durch Config oder Tag ignoriert wird
             boolean isIgnored = false;
             ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
             if (entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) {
@@ -61,13 +68,10 @@ public class ModCommonEvents {
                 isIgnored = true;
             }
 
-            // 2. Ablenkungs-Goal nur hinzufügen, wenn er NICHT ignoriert wird
             if (!isIgnored) {
                 mob.goalSelector.addGoal(2, new DistractionGoal(mob));
             }
 
-            // --- DYNAMISCHE ERHÖHUNG DER VANILLA FOLLOW-RANGE ---
-            // Nur ausführen, wenn der Mob nicht ignoriert wird ODER die Config es explizit erlaubt
             if (!isIgnored || StealthConfig.COMMON.BOOST_IGNORED_MOBS_RANGE.get()) {
                 var followAttr = mob.getAttribute(Attributes.FOLLOW_RANGE);
                 if (followAttr != null) {
@@ -75,7 +79,6 @@ public class ModCommonEvents {
                         StealthConfig.COMMON.BASE_DETECTION_RANGE.get(),
                         StealthConfig.COMMON.BASE_HEARING_RANGE.get().doubleValue()
                     );
-                    // Wir erhöhen das Attribut nur, wenn die eingestellte Reichweite größer als der Standardwert ist
                     if (followAttr.getBaseValue() < maxConfigRange) {
                         followAttr.setBaseValue(maxConfigRange);
                     }
@@ -84,33 +87,15 @@ public class ModCommonEvents {
         }
     }
 
-    private boolean isPositionSafe(Level level, Vec3 pos) {
-        BlockPos blockPos = BlockPos.containing(pos);
-        BlockState state = level.getBlockState(blockPos);
-        if (state.getFluidState().is(FluidTags.LAVA)) return false;
-        if (state.is(BlockTags.FIRE)) return false;
-        BlockPos below = blockPos.below();
-        return !level.getBlockState(below).getFluidState().is(FluidTags.LAVA);
-    }
-
     @SubscribeEvent
     public void onSetTarget(LivingChangeTargetEvent event) {
         if (!(event.getEntity() instanceof Mob mob)) return;
 
         ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
-        if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) || mob.getType().is(net.stealth.registry.StealthTags.Entities.IGNORES_STEALTH)) {
+        if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) || mob.getType().is(StealthTags.Entities.IGNORES_STEALTH)) {
             return;
         }
-        // WICHTIG: Dieser Block läuft IMMER, sobald Vanilla versucht den Spieler zu targeten -
-        // also bereits BEVOR die Stealth-Checks (LOS/FOV/Distance) weiter unten ausgewertet werden
-        // und das Event ggf. per event.setCanceled(true) wieder verwerfen.
-        // "RawLivingChangeTargetEventTarget" heißt deshalb NICHT "Mob hatte den Spieler gültig (stealth-konform) im Visier",
-        // sondern nur "Vanillas eigenes Target-Goal hat irgendwann mal versucht, ihn zu targeten"
-        // (Vanilla-LOS + FollowRange reichen dafür, die sind großzügiger als unsere Stealth-Regeln).
-        // Ein gecanceltes Event nimmt den Eintrag NICHT zurück - es gibt auch kein removeRawLivingChangeTargetEventTarget().
-        // Konsequenz für die Hörlogik (siehe MixinMob#wouldAttack): isRawLivingChangeTargetEventTarget() ist daher in der
-        // Praxis fast immer schon true, sobald der Spieler einmal in Vanillas Erkennungsradius war -
-        // die 90%-Dämpfung für "unbekannte" Quellen in onReceiveVibration greift seltener als man denkt.
+
         LivingEntity newTarget = event.getNewTarget();
         if (newTarget != null) {
             mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
@@ -126,10 +111,6 @@ public class ModCommonEvents {
                         state.setLastKnownPos(null);
                     }
                     state.setAlertLevel(0.6f); 
-                    StealthNetwork.CHANNEL.send(
-                        PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                        new ClientBoundSyncStealthPacket(mob.getId(), 0.6f)
-                    );
                 });
             }
             return;
@@ -140,13 +121,10 @@ public class ModCommonEvents {
 
             mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
                 boolean isRememberedTarget = player.getUUID().equals(state.getITarget()) && state.getTimeSinceLastSeen() <= 100;
+                float oldAlert = state.getAlertLevel();
 
-                if (state.getAlertLevel() >= 0.9f || isRememberedTarget) {
+                if (oldAlert >= 0.9f || isRememberedTarget) {
                     state.setAlertLevel(1.0f);
-                    StealthNetwork.CHANNEL.send(
-                        PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                        new ClientBoundSyncStealthPacket(mob.getId(), 1.0f)
-                    );
                     return; 
                 }
 
@@ -163,22 +141,77 @@ public class ModCommonEvents {
                     
                     if (hasLOS && !safeFromBack) {
                         state.setSuspiciousLocation(player.position(), 10.0f, mob.level().getGameTime());
-                        if (state.getAlertLevel() < 0.5f) {
+                        if (oldAlert < 0.5f) {
                             state.addAlertLevel(0.2f);
-                            StealthNetwork.CHANNEL.send(
-                                PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                                new ClientBoundSyncStealthPacket(mob.getId(), state.getAlertLevel())
-                            );
                         }
                     }
                 } else {
                     state.setAlertLevel(1.0f);
-                    StealthNetwork.CHANNEL.send(
-                        PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                        new ClientBoundSyncStealthPacket(mob.getId(), 1.0f)
-                    );
                 }
             });
+        }
+    }
+
+    private static boolean visibilityChanged(float newVis, float oldVis) {
+        if (Float.isNaN(oldVis)) return true;
+        if (newVis < 0f && oldVis < 0f) return false; 
+        return Math.abs(newVis - oldVis) >= 0.05f; 
+    }
+
+    private static ThreatLevel computeThreatLevel(ServerPlayer player) {
+        double radius = 30.0;
+        AABB area = player.getBoundingBox().inflate(radius);
+        List<Mob> nearbyMobs = player.level().getEntitiesOfClass(Mob.class, area);
+        ThreatLevel maxThreat = ThreatLevel.NONE;
+        double fov = StealthConfig.COMMON.FOV_DEGREES.get();
+
+        for (Mob mob : nearbyMobs) {
+            ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
+            if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString()))
+                    || mob.getType().is(StealthTags.Entities.IGNORES_STEALTH)) {
+                continue;
+            }
+
+            ThreatLevel mobThreat = mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).map(state -> {
+                float alert = state.getAlertLevel();
+                boolean isTargetingMe = (mob.getTarget() == player);
+                if (isTargetingMe || alert >= 0.99f) return ThreatLevel.HUNTED;
+                if (alert > 0.5f) return ThreatLevel.SUSPICIOUS;
+                if (StealthMath.isEntityInFieldOfView(mob, player, fov) && StealthMath.hasLineOfSight(mob, player)) {
+                    return ThreatLevel.WATCHED;
+                }
+                return ThreatLevel.NONE;
+            }).orElse(ThreatLevel.NONE);
+
+            if (mobThreat.severity > maxThreat.severity) {
+                maxThreat = mobThreat;
+            }
+        }
+        return maxThreat;
+    }
+
+    private static void syncPlayerHud(ServerPlayer player, boolean forceImmediate, boolean suppressSound) {
+        PlayerHudSyncState syncState = HUD_SYNC_STATE.computeIfAbsent(player.getUUID(), id -> new PlayerHudSyncState());
+        boolean accurateSync = StealthConfig.COMMON.ACCURATE_HUD_SYNC.get();
+        float visibility = accurateSync
+                ? (float) StealthMath.getVisibilityScore(player)
+                : ClientBoundPlayerHudPacket.NO_SERVER_VISIBILITY;
+
+        ThreatLevel threat = computeThreatLevel(player);
+        boolean visChanged = visibilityChanged(visibility, syncState.lastSentVisibility);
+        boolean threatChanged = threat != syncState.lastSentThreat;
+        boolean periodicForce = syncState.ticksSinceLastSync > 40; 
+
+        if (forceImmediate || visChanged || threatChanged || periodicForce) {
+            StealthNetwork.CHANNEL.send(
+                    PacketDistributor.PLAYER.with(() -> player),
+                    new ClientBoundPlayerHudPacket(visibility, threat, suppressSound)
+            );
+            syncState.lastSentVisibility = visibility;
+            syncState.lastSentThreat = threat;
+            syncState.ticksSinceLastSync = 0;
+        } else {
+            syncState.ticksSinceLastSync++;
         }
     }
 
@@ -189,11 +222,9 @@ public class ModCommonEvents {
         if (event.getEntity() instanceof Player player) {
             if (player.tickCount % 10 != 0) return; 
             
-            double visibility = StealthMath.getVisibilityScore(player);
-            StealthNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> (net.minecraft.server.level.ServerPlayer) player),
-                new ClientBoundVisibilityPacket((float) visibility)
-            );
+            if (player instanceof ServerPlayer serverPlayer) {
+                syncPlayerHud(serverPlayer, false, false);
+            }
             return;
         }
         
@@ -201,12 +232,11 @@ public class ModCommonEvents {
         if (mob.tickCount % 5 != 0) return;
 
         ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
-        if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) || mob.getType().is(net.stealth.registry.StealthTags.Entities.IGNORES_STEALTH)) {
+        if ((entityKey != null && StealthConfig.COMMON.BLACKLISTED_MOBS.get().contains(entityKey.toString())) || mob.getType().is(StealthTags.Entities.IGNORES_STEALTH)) {
             return;
         }
 
         mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
-            float oldAlert = state.getAlertLevel();
             LivingEntity target = mob.getTarget();
             java.util.UUID iTarget = state.getITarget();
 
@@ -237,18 +267,11 @@ public class ModCommonEvents {
                 Vec3 active = state.getActiveDistraction();
 
                 if (susp != null && state.getAlertLevel() >= 0.295f) {
-					if (active == null || !susp.equals(active)) {
-						state.setActiveDistraction(susp);
-						state.clearSuspiciousLocation();
-					}
+                    if (active == null || !susp.equals(active)) {
+                        state.setActiveDistraction(susp);
+                        state.clearSuspiciousLocation();
+                    }
                 }
-            }
-
-            if (Math.abs(state.getAlertLevel() - oldAlert) > 0.0001f) {
-                StealthNetwork.CHANNEL.send(
-                    PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                    new ClientBoundSyncStealthPacket(mob.getId(), state.getAlertLevel())
-                );
             }
         });
     }
@@ -261,11 +284,12 @@ public class ModCommonEvents {
                 mob.getCapability(StealthStateProvider.STEALTH_CAPABILITY).ifPresent(state -> {
                     state.setAlertLevel(1.0f);
                     state.setLastKnownPos(attacker.position());
-                    StealthNetwork.CHANNEL.send(
-                        PacketDistributor.TRACKING_ENTITY.with(() -> mob),
-                        new ClientBoundSyncStealthPacket(mob.getId(), 1.0f)
-                    );
                 });
+                
+                // Sofortiger Sync des Angreifers zur Reduzierung spürbarer Lags, Sound unterdrückt
+                if (attacker instanceof ServerPlayer serverAttacker) {
+                    syncPlayerHud(serverAttacker, true, true);
+                }
             }
             
             boolean isCloseEnough = attacker.distanceTo(victim) <= 5.0f;
@@ -273,7 +297,6 @@ public class ModCommonEvents {
             
             if (isCloseEnough && isMeleeAttack && StealthConfig.COMMON.BACKSTAB_ENABLED.get() && StealthMath.isBehind(attacker, victim)) {
                 
-                // Neue Schadensberechnung mit Attributen
                 float flatBonus = 0.0f;
                 float multiBonus = 1.0f;
 
@@ -288,28 +311,26 @@ public class ModCommonEvents {
 
                 float baseDamage = event.getAmount();
                 float newDamage = (baseDamage + flatBonus) * totalMultiplier;
-				// TODO:
-                // 1. Custom Forge Event (z.B. 'BackstabEvent') feuern, damit andere Mods eingreifen können. Zum beispiel Waffenspezifische Effekte: z.B. Keule = Stun-Effekt statt purem Schaden, Dolch = Blutung.
-                // 2. Animations-Mods Trigger: Ein NBT-Tag oder Event für Mods wie Epic Fight bereitstellen, um eine spezielle Meuchel-Animation abzuspielen.
-               
+                
                 event.setAmount(newDamage);
-                // --- DYNAMISCHER SOUND ---
-				String soundId = StealthConfig.COMMON.BACKSTAB_SOUND.get();
-				if (!soundId.isEmpty() && !soundId.equalsIgnoreCase("none")) {
-					net.minecraft.sounds.SoundEvent sound = ForgeRegistries.SOUND_EVENTS.getValue(new ResourceLocation(soundId));
-					if (sound != null) {
-						attacker.level().playSound(null, attacker.blockPosition(), sound, SoundSource.PLAYERS, 1.0f, 1.5f);
-					}
-				}
 
-				// --- DYNAMISCHE PARTIKEL ---
-				String particleId = StealthConfig.COMMON.BACKSTAB_PARTICLE.get();
-				if (!particleId.isEmpty() && !particleId.equalsIgnoreCase("none") && attacker.level() instanceof ServerLevel sl) {
-					net.minecraft.core.particles.ParticleType<?> particle = ForgeRegistries.PARTICLE_TYPES.getValue(new ResourceLocation(particleId));
-					if (particle instanceof net.minecraft.core.particles.SimpleParticleType simpleParticle) {
-						sl.sendParticles(simpleParticle, victim.getX(), victim.getEyeY(), victim.getZ(), 10, 0.2, 0.2, 0.2, 0.1);
-					}
-				}
+                // --- DYNAMISCHER SOUND ---
+                String soundId = StealthConfig.COMMON.BACKSTAB_SOUND.get();
+                if (!soundId.isEmpty() && !soundId.equalsIgnoreCase("none")) {
+                    net.minecraft.sounds.SoundEvent sound = ForgeRegistries.SOUND_EVENTS.getValue(new ResourceLocation(soundId));
+                    if (sound != null) {
+                        attacker.level().playSound(null, attacker.blockPosition(), sound, SoundSource.PLAYERS, 1.0f, 1.5f);
+                    }
+                }
+
+                // --- DYNAMISCHE PARTIKEL ---
+                String particleId = StealthConfig.COMMON.BACKSTAB_PARTICLE.get();
+                if (!particleId.isEmpty() && !particleId.equalsIgnoreCase("none") && attacker.level() instanceof ServerLevel sl) {
+                    net.minecraft.core.particles.ParticleType<?> particle = ForgeRegistries.PARTICLE_TYPES.getValue(new ResourceLocation(particleId));
+                    if (particle instanceof net.minecraft.core.particles.SimpleParticleType simpleParticle) {
+                        sl.sendParticles(simpleParticle, victim.getX(), victim.getEyeY(), victim.getZ(), 10, 0.2, 0.2, 0.2, 0.1);
+                    }
+                }
             }
         }
     }

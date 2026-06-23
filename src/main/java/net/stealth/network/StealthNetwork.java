@@ -5,6 +5,10 @@ import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.simple.SimpleChannel;
 import net.stealth.StealthMod;
 
+/**
+ * Registriert alle verbleibenden Netzwerkpakete des StealthMods.
+ * Das alte SyncStealthState- und Visibility-Paket wurden durch das kombinierte HUD-Paket ersetzt.
+ */
 public class StealthNetwork {
     private static final String PROTOCOL_VERSION = "1";
     public static SimpleChannel CHANNEL;
@@ -19,27 +23,20 @@ public class StealthNetwork {
 
         int id = 0;
         
-        // Packet 0: Sync Stealth State (Auge)
-        CHANNEL.registerMessage(id++,
-            ClientBoundSyncStealthPacket.class,
-            ClientBoundSyncStealthPacket::encode,
-            ClientBoundSyncStealthPacket::new, 
-            ClientBoundSyncStealthPacket::handle
-        );
-
-        // Packet 1: Sound Noise (Wellen) - NEU!
+        // Packet 0: Sound Noise (Wellen)
         CHANNEL.registerMessage(id++,
             ClientBoundSoundNoisePacket.class,
             ClientBoundSoundNoisePacket::encode,
-            ClientBoundSoundNoisePacket::new, // Nutzt den Decoder-Konstruktor
+            ClientBoundSoundNoisePacket::new,
             ClientBoundSoundNoisePacket::handle
         );
-		
-		CHANNEL.registerMessage(id++,
-			ClientBoundVisibilityPacket.class,
-			ClientBoundVisibilityPacket::encode,
-			ClientBoundVisibilityPacket::new,
-			ClientBoundVisibilityPacket::handle
-		);
+
+        // Packet 1: Kombinierter Player-HUD-Sync (Threat + Visibility + Sound-Suppress)
+        CHANNEL.registerMessage(id++,
+            ClientBoundPlayerHudPacket.class,
+            ClientBoundPlayerHudPacket::encode,
+            ClientBoundPlayerHudPacket::new,
+            ClientBoundPlayerHudPacket::handle
+        );
     }
 }

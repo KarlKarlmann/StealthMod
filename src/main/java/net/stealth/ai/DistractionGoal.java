@@ -108,7 +108,7 @@ public class DistractionGoal extends Goal {
             // TUNNELBLICK-FIX: Wenn das Gehirn ein LAUTERES Geräusch empfangen hat,
             // ist currentDistraction plötzlich eine andere Koordinate. Wir brechen DIESES 
             // Goal sofort ab! Es startet im nächsten Frame neu mit der wichtigen Koordinate.
-            if (currentDistraction == null || !currentDistraction.equals(this.targetPos)) {
+            if (currentDistraction == null || !currentDistraction.equals(this.targetPos) || mob.position().distanceToSqr(this.targetPos) < 2.0) {
                 return false;
             }
 

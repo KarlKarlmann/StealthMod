@@ -107,11 +107,11 @@ public class StealthMath {
             movementSpeed = target.getDeltaMovement().lengthSqr();
         }
 
-        double movementFactor = 0.5; 
+        double movementFactor = 0.8; 
         if (movementSpeed > 0.0061175) {
             movementFactor = target.isSprinting() ? 1.5 : (target.isCrouching() ? 1.0 : 1.1);
         } else if (target.isCrouching()) {
-            movementFactor = 0.8; 
+            movementFactor = 0.5; 
         }
 
         double camoValue = 0.0;
