@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -19,23 +20,11 @@ import java.util.Properties;
  * ARCHITEKTUR: DECOUPLED HUD ASSET EXPORTER & SYSTEM ACTIVATOR
  * Exportiert HUD-Konfigurationen und die aktuell im Spiel geladenen Assets.
  * Schreibt die aktuellen RAM-Koordinaten des Editors in die default_hud.properties.
- * Nutzt Minecrafts ResourceManager, um die im Moment aktiven Texturen zu klonen.
+ * Nutzt den ResourceManager von Minecraft, um DYNAMISCH alle Texturen aus stealth:textures/gui/ zu klonen.
  */
 public class ResourcePackExporter {
 
     private static final String PACK_PREFIX = "file/";
-    
-    // Die 8 Standard-Assets des Stealth-HUDs, die im Mod enthalten sind
-    private static final List<String> HUD_ASSETS = List.of(
-        "eyeclosed.png",
-        "eyehalfclosed.png",
-        "eyeopen.png",
-        "eyewide.png",
-        "dagger_icon.png",
-        "sound_wave_1.png",
-        "sound_wave_2.png",
-        "sound_wave_3.png"
-    );
 
     // =========================================================================
     // KOMPATIBILITÄTSSCHICHT FÜR DEN EDITOR SCREEN
@@ -152,26 +141,38 @@ public class ResourcePackExporter {
                 }
             }
 
-            // 5. HUD-Texturen sicher über den ResourceManager klonen!
+            // 5. DYNAMISCHES EXPORTIEREN ALLER TEXTUREN AUS "stealth:textures/gui"
+            // Wir scannen das geladene Ressourcen-System nach allen PNGs in diesem Verzeichnis.
+            // Das sorgt dafür, dass neue Texturen (wie "hiding_box.png") automatisch mitgenommen werden!
+            var resourceManager = mc.getResourceManager();
+            Map<ResourceLocation, Resource> activeGuiResources = resourceManager.listResources(
+                "textures/gui", 
+                rl -> rl.getNamespace().equals("stealth") && rl.getPath().endsWith(".png")
+            );
+
             int exportedCount = 0;
-            for (String assetName : HUD_ASSETS) {
+            for (Map.Entry<ResourceLocation, Resource> entry : activeGuiResources.entrySet()) {
+                ResourceLocation rl = entry.getKey();
+                Resource resource = entry.getValue();
+
+                // Extrahiere den reinen Dateinamen (z.B. "textures/gui/eyeopen.png" -> "eyeopen.png")
+                String fullPath = rl.getPath();
+                String assetName = fullPath.substring(fullPath.lastIndexOf('/') + 1);
+
                 File targetFile = new File(hudTexturesDir, assetName);
                 if (targetFile.exists()) {
-                    continue; // Vorhandene Texturen des Spielers niemals überschreiben!
+                    continue; // Bereits manuell veränderte Texturen des Spielers niemals überschreiben!
                 }
 
-                ResourceLocation resourceLocation = new ResourceLocation("stealth", "textures/gui/" + assetName);
-                Optional<Resource> activeResource = mc.getResourceManager().getResource(resourceLocation);
-
-                if (activeResource.isPresent()) {
-                    try (InputStream is = activeResource.get().open()) {
-                        Files.copy(is, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        exportedCount++;
-                    }
+                try (InputStream is = resource.open()) {
+                    Files.copy(is, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    exportedCount++;
+                } catch (Exception e) {
+                    System.err.println("[Stealth] Fehler beim Exportieren des Assets " + rl + ": " + e.getMessage());
                 }
             }
 
-            mc.player.sendSystemMessage(Component.literal("§a[Stealth] HUD pack successfully exported and saved!"));
+            mc.player.sendSystemMessage(Component.literal("§a[Stealth] HUD pack with " + exportedCount + " textures successfully exported!"));
 
         } catch (Exception e) {
             mc.player.sendSystemMessage(Component.literal("§c[Stealth] Export error: " + e.getMessage()));
